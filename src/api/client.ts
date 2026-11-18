@@ -1,52 +1,124 @@
 /**
- * Cliente HTTP placeholder (Fase 1 — scaffold).
+ * Cliente HTTP tipado sobre la API de SamProject (CONTRATO_API.md v1.1).
  *
- * AÚN NO CONSUME NINGÚN ENDPOINT. Este módulo deja lista la estructura
- * para cuando lleguen las pantallas de datos (auth → espacios → proyectos →
- * tareas → lista → Kanban), consumiendo el contrato de
- * docs/orquestacion/CONTRATO_API.md.
+ * - Base URL: `${API_BASE_URL}` (ver ./config.ts); rutas bajo /api/v1.
+ * - Auth: `Authorization: Bearer <accessToken>` automático salvo `auth: false`.
+ * - Errores: lanza `ApiRequestError` con statusCode/mensajes siempre.
+ * - Listas paginadas: envelope `{ datos, meta }` (ver ./types.ts).
  *
- * Convenciones del contrato que este cliente respetará:
- *  - Base URL: `${API_BASE_URL}` (ver ./config.ts), rutas bajo /api/v1.
- *  - Auth: `Authorization: Bearer <accessToken>` en todo excepto
- *    registro/login/recuperar/restablecer.
- *  - Errores: `{ statusCode, message: string | string[], error: string }`.
- *  - Listas paginadas con envelope `{ datos: [...], meta: { pagina, tamanoPagina, total, totalPaginas } }`.
- *  - Fechas ISO 8601 UTC (con `Z`).
- *
- * Fuera de alcance a propósito: sin lógica de negocio, sin cálculo de
- * métricas en cliente, sin manejo de tokens todavía. Eso llega con las
- * pantallas de autenticación, no antes.
+ * La app NO calcula métricas: los números vienen del backend.
  */
-
 import { API_BASE_URL } from './config';
+import { getToken } from './tokenStorage';
+import type { ApiErrorBody } from './types';
 
-export type ApiError = {
-  statusCode: number;
-  message: string | string[];
-  error: string;
-};
+/** Error normalizado de la API. `statusCode: 0` = sin conexión con el servidor. */
+export class ApiRequestError extends Error {
+  readonly statusCode: number;
+  readonly error: string;
+  /** Mensajes aplanados del backend (string[] en validación, string en negocio). */
+  readonly mensajes: string[];
 
-/** Envelope de lista paginada del contrato (sección 0, Paginación). */
-export type Paginated<T> = {
-  datos: T[];
-  meta: {
-    pagina: number;
-    tamanoPagina: number;
-    total: number;
-    totalPaginas: number;
-  };
-};
+  constructor(statusCode: number, error: string, mensajes: string[]) {
+    super(mensajes.join(' '));
+    this.name = 'ApiRequestError';
+    this.statusCode = statusCode;
+    this.error = error;
+    this.mensajes = mensajes;
+  }
 
-async function request<T>(_path: string, _init?: RequestInit): Promise<T> {
-  // Intencionadamente sin implementar en el scaffold.
-  // Las pantallas de datos llegarán en pasos posteriores de la Fase 1.
-  throw new Error(
-    `Cliente API no implementado todavía (scaffold de Fase 1). Base URL configurada: ${API_BASE_URL}`,
-  );
+  get esErrorDeRed(): boolean {
+    return this.statusCode === 0;
+  }
 }
 
-export const apiClient = {
-  baseUrl: API_BASE_URL,
-  request,
-} as const;
+/** Se invoca cuando el backend responde 401 (token inválido/expirado/versión). */
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
+type RequestOptions = {
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+  body?: unknown;
+  /** false para endpoints públicos (registro, login, recuperar, restablecer). */
+  auth?: boolean;
+  signal?: AbortSignal;
+};
+
+function normalizarMensajes(body: ApiErrorBody | undefined, fallback: string): string[] {
+  if (!body) return [fallback];
+  const msg = body.message;
+  if (Array.isArray(msg)) return msg.length > 0 ? msg : [fallback];
+  if (typeof msg === 'string' && msg.trim().length > 0) return [msg];
+  return [fallback];
+}
+
+async function parseErrorBody(res: Response): Promise<ApiErrorBody | undefined> {
+  try {
+    const text = await res.text();
+    if (!text) return undefined;
+    return JSON.parse(text) as ApiErrorBody;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = 'GET', body, auth = true, signal } = options;
+
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (auth) {
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
+    throw new ApiRequestError(
+      0,
+      'NetworkError',
+      ['No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.'],
+    );
+  }
+
+  if (res.status === 204) return undefined as T;
+
+  if (!res.ok) {
+    const errorBody = await parseErrorBody(res);
+    if (res.status === 401) onUnauthorized?.();
+    throw new ApiRequestError(
+      res.status,
+      errorBody?.error ?? 'Error',
+      normalizarMensajes(errorBody, `Error ${res.status} al contactar el servidor.`),
+    );
+  }
+
+  const text = await res.text();
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiRequestError(res.status, 'InvalidJson', ['El servidor devolvió una respuesta inesperada.']);
+  }
+}
+
+/** Mensaje amigable único para mostrar en la UI ante un error de API. */
+export function mensajeDeError(error: unknown, respaldo = 'Algo salió mal. Inténtalo de nuevo.'): string {
+  if (error instanceof ApiRequestError) {
+    if (error.statusCode === 429) {
+      return 'Demasiados intentos. Espera un minuto e inténtalo de nuevo.';
+    }
+    return error.mensajes.join('\n');
+  }
+  return respaldo;
+}

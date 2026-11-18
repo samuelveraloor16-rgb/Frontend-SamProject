@@ -1,0 +1,162 @@
+import { useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { AuthLayout } from '../components/AuthLayout';
+import { ErrorBanner } from '../components/ErrorBanner';
+import { FormField } from '../components/FormField';
+import { PrimaryButton } from '../components/PrimaryButton';
+import { useAuth } from '../auth/AuthContext';
+import { mensajeDeError } from '../api/client';
+import {
+  validarConfirmacion,
+  validarContrasena,
+  validarEmail,
+  validarNombre,
+} from '../lib/validation';
+import type { RootStackParamList } from '../navigation/types';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Registro'>;
+
+type Errores = {
+  nombre?: string | null;
+  email?: string | null;
+  contrasena?: string | null;
+  confirmacion?: string | null;
+};
+
+export function RegistroScreen({ navigation }: Props) {
+  const { registrarse } = useAuth();
+  const [nombre, setNombre] = useState('');
+  const [email, setEmail] = useState('');
+  const [contrasena, setContrasena] = useState('');
+  const [confirmacion, setConfirmacion] = useState('');
+  const [errores, setErrores] = useState<Errores>({});
+  const [errorServidor, setErrorServidor] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  const validarTodo = (): Errores => ({
+    nombre: validarNombre(nombre),
+    email: validarEmail(email),
+    contrasena: validarContrasena(contrasena),
+    confirmacion: validarConfirmacion(contrasena, confirmacion),
+  });
+
+  const enviar = async () => {
+    setErrorServidor(null);
+    const nuevos = validarTodo();
+    setErrores(nuevos);
+    if (Object.values(nuevos).some((e) => e)) return;
+
+    setEnviando(true);
+    try {
+      // Al registrarse, el backend crea el espacio personal y la Bandeja de
+      // entrada en la misma transacción; la app los obtiene después vía /espacios.
+      await registrarse(nombre, email, contrasena);
+    } catch (error) {
+      setErrorServidor(mensajeDeError(error, 'No pudimos crear tu cuenta. Inténtalo de nuevo.'));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const actualizar = (campo: keyof Errores) => (valor: string) => {
+    setErrorServidor(null);
+    switch (campo) {
+      case 'nombre':
+        setNombre(valor);
+        if (errores.nombre !== undefined) setErrores((p) => ({ ...p, nombre: validarNombre(valor) }));
+        break;
+      case 'email':
+        setEmail(valor);
+        if (errores.email !== undefined) setErrores((p) => ({ ...p, email: validarEmail(valor) }));
+        break;
+      case 'contrasena':
+        setContrasena(valor);
+        setErrores((p) => ({
+          ...p,
+          contrasena: p.contrasena !== undefined ? validarContrasena(valor) : p.contrasena,
+          confirmacion:
+            p.confirmacion !== undefined ? validarConfirmacion(valor, confirmacion) : p.confirmacion,
+        }));
+        break;
+      case 'confirmacion':
+        setConfirmacion(valor);
+        if (errores.confirmacion !== undefined) {
+          setErrores((p) => ({ ...p, confirmacion: validarConfirmacion(contrasena, valor) }));
+        }
+        break;
+    }
+  };
+
+  return (
+    <AuthLayout
+      titulo="Crea tu cuenta"
+      subtitulo="Al registrarte creamos tu espacio personal y tu Bandeja de entrada."
+      pie={
+        <View className="flex-row items-center gap-1.5">
+          <Text className="text-[14px] text-text">¿Ya tienes una cuenta?</Text>
+          <Pressable accessibilityRole="link" hitSlop={8} onPress={() => navigation.navigate('Acceso')}>
+            <Text className="text-[14px] font-semibold text-primary underline">Inicia sesión</Text>
+          </Pressable>
+        </View>
+      }
+    >
+      <ErrorBanner mensaje={errorServidor} />
+      <FormField
+        label="Nombre"
+        value={nombre}
+        onChangeText={actualizar('nombre')}
+        error={errores.nombre}
+        placeholder="Ana García"
+        autoCapitalize="words"
+        autoComplete="name"
+        editable={!enviando}
+        returnKeyType="next"
+      />
+      <FormField
+        label="Correo"
+        value={email}
+        onChangeText={actualizar('email')}
+        error={errores.email}
+        placeholder="ana@example.com"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        autoComplete="email"
+        autoCorrect={false}
+        editable={!enviando}
+        returnKeyType="next"
+      />
+      <FormField
+        label="Contraseña"
+        value={contrasena}
+        onChangeText={actualizar('contrasena')}
+        error={errores.contrasena}
+        placeholder="Mínimo 8 caracteres"
+        secureTextEntry
+        autoCapitalize="none"
+        autoComplete="new-password"
+        editable={!enviando}
+        returnKeyType="next"
+      />
+      <Text className="-mt-2 mb-4 text-[12px] leading-4 text-text opacity-70">
+        Mínimo 8 caracteres, con al menos una letra y un número.
+      </Text>
+      <FormField
+        label="Confirmar contraseña"
+        value={confirmacion}
+        onChangeText={actualizar('confirmacion')}
+        error={errores.confirmacion}
+        placeholder="Repite tu contraseña"
+        secureTextEntry
+        autoCapitalize="none"
+        autoComplete="new-password"
+        editable={!enviando}
+        returnKeyType="go"
+        onSubmitEditing={enviar}
+      />
+      <View className="mt-2">
+        <PrimaryButton titulo="Crear cuenta" onPress={enviar} cargando={enviando} />
+      </View>
+    </AuthLayout>
+  );
+}

@@ -2,7 +2,7 @@
 
 App móvil de **SamProject**: organización rápida de tareas y proyectos para estudiantes, equipos pequeños y emprendedores. Repositorio de la **Fase 1** (Núcleo/MVP, RF-01 a RF-17) y Fases 2–4 posteriores.
 
-> Estado actual: **scaffold**. No hay pantallas de negocio ni llamadas reales a la API todavía. Solo navegación mínima "en construcción", tema institucional y estructura lista para construir.
+> Estado actual: **capa de datos + autenticación**. Login y Registro funcionales contra el backend real (token en memoria + SecureStore), Home con datos reales del usuario (perfil, espacio personal creado al registrarse, conteo de la Bandeja de entrada vía `meta.total` del backend). Aún no hay pantallas de proyectos, tareas ni Kanban.
 
 - Contexto del proyecto: `AGENTS.md` (raíz del workspace) y `..\AGENTS.md`
 - Plan de Fase 1: `..\docs\orquestacion\FASE1.md`
@@ -24,6 +24,7 @@ App móvil de **SamProject**: organización rápida de tareas y proyectos para e
 | typescript | ~6.0.3 (estricto) |
 | @react-navigation/* | 7.x (native-stack + bottom-tabs) |
 | @tanstack/react-query | ^5.108.0 |
+| expo-secure-store | instalado vía `npx expo install` (versión compatible con SDK 58) |
 | nativewind / tailwindcss | 4.2.7 / 3.4.19 |
 | react-native-draggable-flatlist | ^4.0.3 |
 | react-native-calendars | ^1.1314.0 |
@@ -57,12 +58,12 @@ Edita `.env` y apunta `EXPO_PUBLIC_API_URL` a tu backend:
 | `npm run typecheck` | `tsc --noEmit` (estricto) |
 | `npm run lint` | ESLint (eslint-config-expo, flat config) |
 
-Verificación realizada sobre este scaffold: `npx tsc --noEmit` ✓, `npm run lint` ✓, `npx expo install --check` ✓ ("Dependencies are up to date"), `npx expo export --platform android` ✓ (bundle generado y luego borrado; `dist-test/` no existe en el repo).
+Verificación: `npx tsc --noEmit` ✓, `npm run lint` ✓, `npx expo install --check` ✓, `npx expo export --platform android` ✓ (bundle generado y luego borrado; `dist-test/` no existe en el repo). Smoke HTTP contra el backend real (registro → login → /perfil → /espacios → bandeja → logout → 401): ✓ contra el `dist/` actual; el proceso que escucha en :3000 debe reiniciarse para servir `/espacios` y `/bandeja` (ver "Backend" abajo).
 
 ## Estructura
 
 ```
-App.tsx                  Entrada: GestureHandlerRootView + SafeAreaProvider + QueryClientProvider + AppNavigator
+App.tsx                  Entrada: GestureHandlerRootView + SafeAreaProvider + QueryClientProvider + AuthProvider + AppNavigator
 index.ts                 registerRootComponent + import 'react-native-gesture-handler'
 global.css               Directivas @tailwind (NativeWind)
 tailwind.config.js       Tema con la paleta institucional
@@ -72,16 +73,26 @@ eslint.config.js         flat config sobre eslint-config-expo
 src/
   api/
     config.ts            API_BASE_URL desde EXPO_PUBLIC_API_URL (default http://localhost:3000/api/v1)
-    client.ts            Cliente HTTP PLACEHOLDER: tipos del contrato (ApiError, Paginated<T>); NO hace llamadas todavía
+    client.ts            Cliente HTTP tipado: Bearer automático, ApiRequestError (mensajes del backend), 401 → cierre de sesión
+    tokenStorage.ts      accessToken en memoria + SecureStore (expo-secure-store)
+    auth.ts              registro / login / logout / perfil (CONTRATO_API.md §1)
+    espacios.ts          listarEspacios, obtenerBandejaTotal (§2, §5)
+    types.ts             Usuario, Espacio, Paginated<T>, ApiErrorBody (contrato v1.1)
+  auth/
+    AuthContext.tsx      Sesión: hidrata token al arrancar, valida con /perfil, 401 global → logout
+  lib/
+    validation.ts        Validación cliente alineada con el contrato (email, contraseña 8+ letra+número…)
   navigation/
-    AppNavigator.tsx     Native-stack raíz (título "SamProject")
-    MainTabs.tsx         Bottom-tabs placeholder: Inicio / Próximamente
-    types.ts             ParamList tipadas
-  screens/               HomeScreen, PendingScreen (placeholders "En construcción")
-  components/            PlaceholderScreen (logo + texto institucional)
+    AppNavigator.tsx     Native-stack condicionado por sesión: pública (Acceso/Registro) o autenticada (Inicio)
+    types.ts             RootStackParamList tipada
+  screens/
+    LoginScreen.tsx      Acceso (RF-02) con validación y errores del backend
+    RegistroScreen.tsx   Registro (RF-01): crea cuenta; el backend crea espacio personal + Bandeja
+    HomeScreen.tsx       Home autenticado: perfil real, espacio personal (rol, miembros), meta.total de la Bandeja
+  components/            AuthLayout, FormField, PrimaryButton, ErrorBanner
   theme/colors.ts        Paleta institucional (fuente única para estilos inline)
 assets/
-  Logo.png               Logotipo institucional (copiado del root del workspace; no se inventó otro)
+  Logo.png               Logotipo institucional (intocado)
 ```
 
 ## Paleta institucional (fija)
@@ -98,12 +109,16 @@ Interfaz en **español**. Código técnico en inglés permitido.
 
 ## Decisiones y alcance
 
-- **No hay pantallas de negocio ni consumo de endpoints** en este scaffold. El cliente API solo define tipos y lanza un error explícito si se invoca.
-- Navegación mínima: native-stack envolviendo un bottom-tabs con 2 pestañas placeholder.
-- **TanStack Query** configurado con `QueryClientProvider` (retry: 1, staleTime 30 s); las decisiones de cacheo reales llegarán con las pantallas de datos.
+- **Capa de datos + autenticación** (este tramo). Sin pantallas de proyectos, tareas, Kanban, calendario ni asistente: llegan en tramos siguientes de la Fase 1.
+- Sesión: `accessToken` en memoria (requests) y en SecureStore (persistencia). Arranque: hidrata el token y lo valida con `GET /perfil`; un 401 en cualquier request cierra la sesión local. Logout llama `POST /auth/logout` (best effort) e invalida el token en el servidor.
+- Al registrarse, el backend crea **en la misma transacción** el espacio personal (`esPersonal: true`, rol ADMINISTRADOR) y el proyecto «Bandeja de entrada». La app **no** los crea: los obtiene con `GET /espacios` y `GET /espacios/:id/bandeja?pageSize=1` (solo `meta.total` y `meta.proyectoId`).
+- **TanStack Query** en el árbol (`QueryClientProvider`) para datos remotos (espacios, bandeja) con `retry: 1, staleTime: 30 s`; la sesión vive en `AuthContext`.
 - La app **nunca calcula métricas**: progreso, vencidas, ritmo… siempre vienen del backend.
 - **Tarea rápida → Bandeja de entrada en máximo 2 toques**: requisito de diseño que se respetará en las pantallas reales.
+- Tipografía de pantalla: Georgia (serif institucional) para titulares; sistema para el cuerpo. La regla dorada (`#D5C78E`) es el único motivo decorativo.
 
 ## Backend
 
 El backend vive en `C:\Users\samue\Desktop\DESARROLLO MOVIL MEJORADO\Backend-SamProject` (NestJS + PostgreSQL + Prisma). **No forma parte de este repo**; esta app es un cliente de su API REST (`/api/v1`). Para probar contra datos reales, arranca el backend y configura `EXPO_PUBLIC_API_URL` como se indica arriba.
+
+> **Importante (2026-11-17):** el proceso que escucha en `:3000` se arrancó a las 18:52, **antes** del último `dist/` (20:12). Responde auth y perfil, pero `GET /espacios` y `GET /espacios/:id/bandeja` devuelven 404. Hay que **reiniciar el backend** con el `dist/` actual; la app ya consume esas rutas según el contrato v1.1.
