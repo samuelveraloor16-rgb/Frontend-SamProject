@@ -1,7 +1,6 @@
 /**
  * Tipos del contrato de API (docs/orquestacion/CONTRATO_API.md v1.1).
- * Solo se modelan los recursos que la app consume en este tramo:
- * auth, perfil, espacios y la Bandeja de entrada (meta).
+ * La app NO calcula métricas: progreso, vencidas y ritmo vienen del backend.
  */
 
 export type Usuario = {
@@ -44,22 +43,110 @@ export type Paginated<T, TMeta extends object = object> = {
   } & TMeta;
 };
 
+export type EstadoTarea = 'PENDIENTE' | 'EN_CURSO' | 'HECHA';
+export type PrioridadTarea = 'BAJA' | 'MEDIA' | 'ALTA' | 'URGENTE';
+
+/** Miembro resumido dentro de proyecto/responsable (CONTRATO_API.md §3 y §4). */
+export type MiembroResumen = {
+  id: string;
+  nombre: string;
+  email: string;
+};
+
+export type Etiqueta = {
+  id: string;
+  nombre: string;
+  color: string;
+};
+
+/** Objeto Proyecto (CONTRATO_API.md §3). `progreso` viene calculado del backend (RF-11). */
+export type Proyecto = {
+  id: string;
+  nombre: string;
+  descripcion: string | null;
+  fechaInicio: string | null;
+  fechaFin: string | null;
+  archivado: boolean;
+  esBandejaDeEntrada: boolean;
+  espacioId: string;
+  miembros: MiembroResumen[];
+  progreso: number;
+  creadoEn: string;
+  actualizadoEn: string;
+};
+
+/** GET /proyectos/:id/progreso — RF-11, cálculo único en backend. */
+export type ProgresoProyecto = {
+  total: number;
+  hechas: number;
+  pendientes: number;
+  enCurso: number;
+  vencidas: number;
+  progreso: number;
+};
+
+/** Objeto Tarea (CONTRATO_API.md §4). */
+export type Tarea = {
+  id: string;
+  titulo: string;
+  descripcion: string | null;
+  estado: EstadoTarea;
+  prioridad: PrioridadTarea;
+  fechaLimite: string | null;
+  fechaFinalizacion: string | null;
+  proyectoId: string;
+  responsable: MiembroResumen | null;
+  tareaPadreId: string | null;
+  etiquetas: Etiqueta[];
+  vencida: boolean;
+  subtareas: number;
+  creadoEn: string;
+  actualizadoEn: string;
+};
+
 /** Resumen mínimo de tarea dentro de la Bandeja (lo que la app usa). */
 export type TareaResumen = {
   id: string;
   titulo: string;
-  estado: 'PENDIENTE' | 'EN_CURSO' | 'HECHA';
-  prioridad: 'BAJA' | 'MEDIA' | 'ALTA';
+  estado: EstadoTarea;
+  prioridad: PrioridadTarea;
   fechaLimite: string | null;
   vencida: boolean;
 };
 
 /** GET /espacios/:espacioId/bandeja — meta incluye proyectoId (CONTRATO_API.md §5). */
-export type BandejaResponse = Paginated<TareaResumen, { proyectoId: string }>;
+export type BandejaResponse = Paginated<Tarea, { proyectoId: string }>;
+
+/** Invitación creada (POST /espacios/:id/invitaciones, §2). El token NO viaja en la respuesta. */
+export type InvitacionCreada = {
+  id: string;
+  email: string;
+  rol: RolEspacio;
+  expiraEn: string;
+};
+
+/** Respuesta de aceptar una invitación (POST /invitaciones/:token/aceptar, §2). */
+export type AceptarInvitacionResponse = {
+  espacio: { id: string; nombre: string; miRol: RolEspacio };
+  mensaje: string;
+};
 
 /** Formato único de errores de la API (CONTRATO_API.md §0). */
 export type ApiErrorBody = {
   statusCode: number;
   message: string | string[];
   error: string;
+};
+
+/** Filtros y orden del listado de tareas (contrato §4 y §5). */
+export type TareaFiltros = {
+  estado?: EstadoTarea;
+  prioridad?: PrioridadTarea;
+  responsableId?: string;
+  q?: string;
+  vencidas?: boolean;
+  orden?: 'creadoEn' | 'fechaLimite' | 'prioridad';
+  direccion?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
 };
