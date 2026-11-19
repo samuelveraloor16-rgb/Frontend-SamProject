@@ -10,6 +10,7 @@ import { BandejaTabScreen } from '../screens/BandejaTabScreen';
 import { EspacioScreen } from '../screens/EspacioScreen';
 import { ProyectoScreen } from '../screens/ProyectoScreen';
 import { TareasScreen } from '../screens/TareasScreen';
+import { TareaDetalleScreen } from '../screens/TareaDetalleScreen';
 import { KanbanScreen } from '../screens/KanbanScreen';
 import { TareaRapidaScreen } from '../screens/TareaRapidaScreen';
 import { AceptarInvitacionScreen } from '../screens/AceptarInvitacionScreen';
@@ -101,6 +102,7 @@ export function AppNavigator() {
             <Stack.Screen name="Espacio" component={EspacioScreen} />
             <Stack.Screen name="Proyecto" component={ProyectoScreen} />
             <Stack.Screen name="Tareas" component={TareasScreen} />
+            <Stack.Screen name="TareaDetalle" component={TareaDetalleScreen} />
             <Stack.Screen name="Kanban" component={KanbanScreen} />
             <Stack.Screen
               name="TareaRapida"

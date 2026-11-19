@@ -350,6 +350,7 @@ export function TareasContent({ modo, proyectoId, espacioId, sinAtras = false }:
             onCambiarEstado={(tarea, siguiente) =>
               cambiarEstado.mutate({ id: tarea.id, siguiente })
             }
+            onAbrir={() => navigation.navigate('TareaDetalle', { tareaId: item.id })}
           />
         )}
         ListFooterComponent={

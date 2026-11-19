@@ -85,6 +85,22 @@ export type ProgresoProyecto = {
   progreso: number;
 };
 
+/** Resumen de subtarea embebido en el detalle (GET /tareas/:id, contrato §4). */
+export type SubtareaResumen = {
+  id: string;
+  titulo: string;
+  estado: EstadoTarea;
+  prioridad: PrioridadTarea;
+  vencida: boolean;
+  responsable: MiembroResumen | null;
+  fechaLimite: string | null;
+};
+
+/** GET /tareas/:id — `subtareas` numérico + `subtareasDetalle` solo en detalle (contrato §4). */
+export type TareaDetalle = Tarea & {
+  subtareasDetalle: SubtareaResumen[];
+};
+
 /** Objeto Tarea (CONTRATO_API.md §4). */
 export type Tarea = {
   id: string;

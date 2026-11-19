@@ -21,6 +21,8 @@ export type RootStackParamList = {
    * - `bandeja` + `espacioId`: Bandeja de entrada de ese espacio.
    */
   Tareas: { proyectoId?: string; espacioId?: string; bandeja?: boolean } | undefined;
+  /** Detalle de tarea: ver y editar (RF-12). */
+  TareaDetalle: { tareaId: string };
   /** Tablero Kanban (RF-17). Mismos modos que Tareas. */
   Kanban: { proyectoId?: string; espacioId?: string; bandeja?: boolean } | undefined;
   /** Tarea rápida → Bandeja (RF-13). Sin espacioId: Bandeja del espacio personal. */

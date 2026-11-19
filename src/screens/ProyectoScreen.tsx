@@ -212,6 +212,7 @@ export function ProyectoScreen() {
             onCambiarEstado={(tarea, siguiente) =>
               cambiarEstado.mutate({ id: tarea.id, estado: siguiente })
             }
+            onAbrir={() => navigation.navigate('TareaDetalle', { tareaId: item.id })}
           />
         )}
       />

@@ -21,10 +21,12 @@ type TareaItemProps = {
   tarea: Tarea;
   /** Cambia el estado al siguiente (PENDIENTE → EN_CURSO → HECHA → PENDIENTE). */
   onCambiarEstado: (tarea: Tarea, siguiente: Tarea['estado']) => void;
+  /** Abre el detalle de la tarea (RF-12). Si se omite, la fila no es pulsable. */
+  onAbrir?: (tarea: Tarea) => void;
 };
 
 /** Fila de tarea para listas: casilla de estado, título, metadatos y badge de vencida. */
-export function TareaItem({ tarea, onCambiarEstado }: TareaItemProps) {
+export function TareaItem({ tarea, onCambiarEstado, onAbrir }: TareaItemProps) {
   const hecha = tarea.estado === 'HECHA';
   return (
     <View
@@ -46,7 +48,13 @@ export function TareaItem({ tarea, onCambiarEstado }: TareaItemProps) {
         />
       </Pressable>
 
-      <View className="flex-1">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Abrir tarea ${tarea.titulo}`}
+        disabled={!onAbrir}
+        onPress={() => onAbrir?.(tarea)}
+        className="flex-1"
+      >
         <Text
           numberOfLines={2}
           className={`text-[15px] font-semibold leading-5 ${
@@ -93,7 +101,7 @@ export function TareaItem({ tarea, onCambiarEstado }: TareaItemProps) {
             Responsable: {tarea.responsable.nombre}
           </Text>
         ) : null}
-      </View>
+      </Pressable>
     </View>
   );
 }
