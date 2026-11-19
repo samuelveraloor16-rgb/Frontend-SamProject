@@ -12,6 +12,7 @@ import { ProyectoScreen } from '../screens/ProyectoScreen';
 import { TareasScreen } from '../screens/TareasScreen';
 import { TareaDetalleScreen } from '../screens/TareaDetalleScreen';
 import { KanbanScreen } from '../screens/KanbanScreen';
+import { CalendarioScreen } from '../screens/CalendarioScreen';
 import { TareaRapidaScreen } from '../screens/TareaRapidaScreen';
 import { AceptarInvitacionScreen } from '../screens/AceptarInvitacionScreen';
 import { useAuth } from '../auth/AuthContext';
@@ -59,6 +60,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       },
       Espacio: 'espacios/:espacioId',
       Proyecto: 'proyectos/:proyectoId',
+      Calendario: 'espacios/:espacioId/calendario',
       AceptarInvitacion: 'invitar',
     },
   },
@@ -104,6 +106,7 @@ export function AppNavigator() {
             <Stack.Screen name="Tareas" component={TareasScreen} />
             <Stack.Screen name="TareaDetalle" component={TareaDetalleScreen} />
             <Stack.Screen name="Kanban" component={KanbanScreen} />
+            <Stack.Screen name="Calendario" component={CalendarioScreen} />
             <Stack.Screen
               name="TareaRapida"
               component={TareaRapidaScreen}

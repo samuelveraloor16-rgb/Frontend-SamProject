@@ -25,6 +25,8 @@ export type RootStackParamList = {
   TareaDetalle: { tareaId: string };
   /** Tablero Kanban (RF-17). Mismos modos que Tareas. */
   Kanban: { proyectoId?: string; espacioId?: string; bandeja?: boolean } | undefined;
+  /** Calendario del espacio (RF-18): vista mensual/semanal + tareas del día. */
+  Calendario: { espacioId: string };
   /** Tarea rápida → Bandeja (RF-13). Sin espacioId: Bandeja del espacio personal. */
   TareaRapida: { espacioId?: string } | undefined;
   /** Aceptación de invitación por token (RF-06). Enlace: samproject://invitar?token=... */

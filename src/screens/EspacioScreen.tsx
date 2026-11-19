@@ -109,6 +109,23 @@ export function EspacioScreen() {
         }
         ListHeaderComponent={
           <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Abrir el calendario del espacio"
+              onPress={() => navigation.navigate('Calendario', { espacioId })}
+              className="mb-3 flex-row items-center gap-3 rounded-2xl border border-secondary bg-white px-4 py-3 active:bg-secondary"
+            >
+              <View className="h-11 w-11 items-center justify-center rounded-xl bg-secondary">
+                <Ionicons name="calendar-outline" size={22} color={colors.primary} />
+              </View>
+              <View className="flex-1">
+                <Text className="text-[14px] font-semibold text-text">Calendario</Text>
+                <Text className="text-[12px] text-text opacity-70">
+                  Tareas por fecha límite · vista mensual y semanal
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+            </Pressable>
             {esAdmin ? (
               <Pressable
                 accessibilityRole="button"

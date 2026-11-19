@@ -1,5 +1,5 @@
 /**
- * Tipos del contrato de API (docs/orquestacion/CONTRATO_API.md v1.1).
+ * Tipos del contrato de API (docs/orquestacion/CONTRATO_API.md v1.2).
  * La app NO calcula métricas: progreso, vencidas y ritmo vienen del backend.
  */
 
@@ -132,6 +132,17 @@ export type TareaResumen = {
 
 /** GET /espacios/:espacioId/bandeja — meta incluye proyectoId (CONTRATO_API.md §5). */
 export type BandejaResponse = Paginated<Tarea, { proyectoId: string }>;
+
+/**
+ * GET /espacios/:espacioId/calendario — RF-18 (CONTRATO_API.md §7, v1.2).
+ * TareaPublica estándar (sin subtareasDetalle); meta añade desde/hasta efectivos
+ * (YYYY-MM-DD, null si el extremo quedó abierto) y `totalDePorTareas`, total de
+ * tareas del rango completo (igual a `meta.total`, clave explícita para el cliente).
+ */
+export type CalendarioResponse = Paginated<
+  Tarea,
+  { desde: string | null; hasta: string | null; totalDePorTareas: number }
+>;
 
 /** Invitación creada (POST /espacios/:id/invitaciones, §2). El token NO viaja en la respuesta. */
 export type InvitacionCreada = {
