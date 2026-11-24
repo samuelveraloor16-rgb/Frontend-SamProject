@@ -34,7 +34,7 @@ type TabNav = BottomTabNavigationProp<PrincipalTabParamList>;
  * si no hay ninguno, ofrece crear uno.
  */
 export function HomeScreen() {
-  const { usuario, cerrarSesion } = useAuth();
+  const { usuario, cerrarSesion, aviso } = useAuth();
   const navigation = useNavigation<Nav>();
   const tabNavigation = useNavigation<TabNav>();
   const queryClient = useQueryClient();
@@ -104,10 +104,14 @@ export function HomeScreen() {
           />
         }
       >
+        {aviso ? <Text accessibilityLiveRegion="polite" className="mb-4 text-text">{aviso}</Text> : null}
         <Text style={{ fontFamily: 'Georgia' }} className="text-[26px] leading-8 text-primary">
           Hola, {usuario.nombre}
         </Text>
         <Text className="mt-1 text-[14px] text-text opacity-80">{usuario.email}</Text>
+        <Pressable accessibilityRole="button" onPress={() => navigation.navigate('Perfil')} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
+          <Text className="text-primary font-semibold underline">Perfil</Text>
+        </Pressable>
         <View className="mt-4 h-[3px] w-14 rounded-full bg-tertiary" />
 
         {/* Espacios del usuario */}

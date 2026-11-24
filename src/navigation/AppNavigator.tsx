@@ -1,4 +1,5 @@
-import { Image, View, ActivityIndicator } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Image, View, ActivityIndicator, Text, Linking } from 'react-native';
 import { NavigationContainer, type LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -15,6 +16,10 @@ import { KanbanScreen } from '../screens/KanbanScreen';
 import { CalendarioScreen } from '../screens/CalendarioScreen';
 import { TareaRapidaScreen } from '../screens/TareaRapidaScreen';
 import { AceptarInvitacionScreen } from '../screens/AceptarInvitacionScreen';
+import { RecuperarScreen, ResetScreen } from '../screens/RecuperacionScreen';
+import { PerfilScreen, CambiarContrasenaScreen } from '../screens/PerfilScreen';
+import { PrimaryButton } from '../components/PrimaryButton';
+import { parseResetLink, ResetLinkCoordinator, type ResetLinkState } from '../lib/resetLink';
 import { useAuth } from '../auth/AuthContext';
 import { colors } from '../theme/colors';
 import type { PrincipalTabParamList, RootStackParamList } from './types';
@@ -50,6 +55,8 @@ function PrincipalTabs() {
 /** Deep links samproject:// (invitación, reset, etc.). */
 const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ['samproject://'],
+  async getInitialURL() { const url = await Linking.getInitialURL(); return url && !parseResetLink(url) ? url : null; },
+  subscribe(listener) { const sub = Linking.addEventListener('url', ({ url }) => { if (!parseResetLink(url)) listener(url); }); return () => sub.remove(); },
   config: {
     screens: {
       Principal: {
@@ -82,11 +89,40 @@ function PantallaDeCarga() {
 }
 
 export function AppNavigator() {
-  const { estado, usuario } = useAuth();
+  const { estado, usuario, aviso, errorValidacion, revalidar, reintentarBorrado } = useAuth();
+  const coordinator = useRef(new ResetLinkCoordinator());
+  const [reset, setReset] = useState<ResetLinkState | null>(null);
+  const [recuperar, setRecuperar] = useState(false);
+  useEffect(() => {
+    let activo = true;
+    const handle = (url: string, initial = false) => {
+      const parsed = parseResetLink(url);
+      if (!parsed) return;
+      setRecuperar(false); setReset(coordinator.current.receive(url, initial));
+    };
+    const sub = Linking.addEventListener('url', ({ url }) => handle(url));
+    void Linking.getInitialURL().then(url => { if (activo && url) handle(url, true); }).catch(() => {});
+    return () => { activo = false; sub.remove(); };
+  }, []);
+
+  const errorBorrado = <View className="flex-1 justify-center bg-background px-6"><Text accessibilityRole="header" className="text-primary text-[24px] mb-4">No se pudo proteger la sesión</Text>{aviso ? <Text accessibilityLiveRegion="polite" className="text-text mb-3">{aviso}</Text> : null}<Text accessibilityLiveRegion="polite" className="text-text mb-5">{errorValidacion}</Text><PrimaryButton titulo="Reintentar" onPress={() => void reintentarBorrado()} /></View>;
+  if (reset) {
+    const bloqueado = estado === 'borrando' || estado === 'error-borrado';
+    return <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, display: bloqueado ? 'none' : 'flex' }} accessibilityElementsHidden={bloqueado} importantForAccessibility={bloqueado ? 'no-hide-descendants' : 'auto'}>
+        <ResetScreen key={reset.id} token={reset.token} esActual={() => coordinator.current.isCurrent(reset.id)} descartar={() => setReset(coordinator.current.discard(reset.id))} cerrar={() => setReset(coordinator.current.close(reset.id))} solicitar={() => { const siguiente = coordinator.current.close(reset.id); setReset(siguiente); if (!siguiente) setRecuperar(true); }} />
+      </View>
+      {estado === 'borrando' ? <PantallaDeCarga /> : estado === 'error-borrado' ? errorBorrado : null}
+    </View>;
+  }
+  if (estado === 'error-borrado') return errorBorrado;
+  if (estado === 'borrando') return <PantallaDeCarga />;
+  if (recuperar) return <RecuperarScreen navigation={{ goBack: () => setRecuperar(false) }} />;
 
   if (estado === 'cargando') {
     return <PantallaDeCarga />;
   }
+  if (estado === 'error-validacion') return <View className="flex-1 justify-center bg-background px-6"><Text accessibilityRole="header" className="text-primary text-[24px] mb-4">Comprobar sesión</Text>{aviso ? <Text accessibilityLiveRegion="polite" className="text-text mb-3">{aviso}</Text> : null}<Text accessibilityLiveRegion="polite" className="text-text mb-5">{errorValidacion}</Text><PrimaryButton titulo="Reintentar" onPress={() => void revalidar()} /></View>;
 
   const autenticado = estado === 'autenticado' && usuario != null;
 
@@ -101,6 +137,8 @@ export function AppNavigator() {
         {autenticado ? (
           <>
             <Stack.Screen name="Principal" component={PrincipalTabs} />
+            <Stack.Screen name="Perfil" component={PerfilScreen} />
+            <Stack.Screen name="CambiarContrasena" component={CambiarContrasenaScreen} />
             <Stack.Screen name="Espacio" component={EspacioScreen} />
             <Stack.Screen name="Proyecto" component={ProyectoScreen} />
             <Stack.Screen name="Tareas" component={TareasScreen} />
@@ -118,6 +156,7 @@ export function AppNavigator() {
           <>
             <Stack.Screen name="Acceso" component={LoginScreen} />
             <Stack.Screen name="Registro" component={RegistroScreen} />
+            <Stack.Screen name="Recuperar" component={RecuperarScreen} />
             <Stack.Screen name="AceptarInvitacion" component={AceptarInvitacionScreen} />
           </>
         )}

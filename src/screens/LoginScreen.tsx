@@ -6,14 +6,15 @@ import { ErrorBanner } from '../components/ErrorBanner';
 import { FormField } from '../components/FormField';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useAuth } from '../auth/AuthContext';
-import { mensajeDeError } from '../api/client';
+import { AutenticacionEnCursoError } from '../auth/SessionController';
+import { ApiRequestError, mensajeDeError } from '../api/client';
 import { validarEmail } from '../lib/validation';
 import type { RootStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Acceso'>;
 
 export function LoginScreen({ navigation }: Props) {
-  const { iniciarSesion } = useAuth();
+  const { iniciarSesion, aviso } = useAuth();
   const [email, setEmail] = useState('');
   const [contrasena, setContrasena] = useState('');
   const [errores, setErrores] = useState<{ email?: string | null; contrasena?: string | null }>({});
@@ -31,7 +32,7 @@ export function LoginScreen({ navigation }: Props) {
     try {
       await iniciarSesion(email, contrasena);
     } catch (error) {
-      setErrorServidor(mensajeDeError(error, 'No pudimos iniciar sesión. Inténtalo de nuevo.'));
+      setErrorServidor(error instanceof AutenticacionEnCursoError ? error.message : error instanceof ApiRequestError && error.statusCode === 401 ? 'Correo o contraseña incorrectos.' : mensajeDeError(error, 'No pudimos iniciar sesión. Inténtalo de nuevo.'));
     } finally {
       setEnviando(false);
     }
@@ -45,7 +46,9 @@ export function LoginScreen({ navigation }: Props) {
         <View className="flex-row items-center gap-1.5">
           <Text className="text-[14px] text-text">¿Aún no tienes cuenta?</Text>
           <Pressable
-            accessibilityRole="link"
+             accessibilityRole="link"
+             accessibilityState={{ disabled: enviando }}
+             disabled={enviando}
             hitSlop={8}
             onPress={() => navigation.navigate('Registro')}
           >
@@ -54,7 +57,7 @@ export function LoginScreen({ navigation }: Props) {
         </View>
       }
     >
-      <ErrorBanner mensaje={errorServidor} />
+      <ErrorBanner mensaje={errorServidor ?? aviso} />
       <FormField
         label="Correo"
         value={email}
@@ -94,6 +97,7 @@ export function LoginScreen({ navigation }: Props) {
       <View className="mt-2">
         <PrimaryButton titulo="Entrar" onPress={enviar} cargando={enviando} />
       </View>
+      <Pressable accessibilityRole="button" disabled={enviando} accessibilityState={{ disabled: enviando }} onPress={() => navigation.navigate('Recuperar')} style={{ minHeight: 48, justifyContent: 'center' }}><Text className="text-primary font-semibold underline">¿Olvidaste tu contraseña?</Text></Pressable>
     </AuthLayout>
   );
 }

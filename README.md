@@ -48,6 +48,15 @@ Edita `.env` y apunta `EXPO_PUBLIC_API_URL` a tu backend:
 
 > **`.env` no se commitea** (está en `.gitignore`). Es la URL pública embebida en el bundle; los secretos viven solo en el servidor.
 
+### Persistencia y recuperación de sesión (RF-02)
+
+- El JWT se guarda únicamente en `expo-secure-store` y en memoria; no se usa AsyncStorage. Al arrancar se consulta `GET /perfil` antes de mostrar información privada. Si falla por red o por el servidor, se conserva el JWT y se ofrece reintentar; un 401 autenticado inicia su eliminación.
+- Antes de guardar o eliminar una credencial se intenta escribir un marcador de limpieza en SecureStore. Si la app se interrumpe después de escribirlo, el siguiente arranque intenta borrar el JWT y el marcador antes de restaurar cualquier sesión. Si la lectura o limpieza falla, la app bloquea el acceso y ofrece reintentar. Si falla la escritura de un nuevo JWT, se intenta revertirla y no se anuncia que se inició sesión.
+- **Límite importante:** SecureStore no ofrece una transacción atómica para estas dos claves. Si el dispositivo no permite registrar el marcador ni borrar la credencial, o si el proceso termina antes de registrar el marcador, no puede garantizarse que el cierre quede registrado tras un reinicio. Si el servidor tampoco confirmó el cierre, un JWT anterior podría volver a ser validado. La app muestra un aviso crítico cuando detecta que no pudo ni marcar ni borrar; reintenta sin compartir el dispositivo. Si no se puede completar el cierre, cambiar la contraseña desde otro dispositivo puede invalidar las sesiones de esa cuenta. Un cierre remoto sin respuesta podría ejecutarse más tarde y afectar una sesión nueva.
+- Un restablecimiento sin respuesta también puede terminar en el servidor después de una consulta de perfil: un `200` anterior no demuestra que el JWT siga vigente después. Si hay un inicio de sesión en curso cuando el resultado es incierto, se descarta su credencial y se pide iniciar sesión de nuevo; para sesiones existentes se revalida sin asumir que el enlace pertenezca a la misma cuenta. Las respuestas tardías del servidor y un cierre inesperado de la app no pueden descartarse desde el cliente.
+- El restablecimiento y la consulta de perfil tienen un plazo cliente de 15 segundos que incluye tanto la petición como la lectura del cuerpo. Agotar el plazo de un restablecimiento se trata como resultado incierto; abortar la espera local no confirma que el servidor haya cancelado la operación. Las respuestas que lleguen después no confirman el resultado ni ejecutan de nuevo las acciones de la pantalla.
+- La confirmación de SecureStore no elimina las limitaciones del sistema operativo ni sustituye las pruebas en Android/iOS. En iOS, el llavero puede conservar elementos tras desinstalar y reinstalar; no se debe asumir que desinstalar elimina la credencial.
+
 ## Comandos
 
 | Comando | Qué hace |

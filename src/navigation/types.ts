@@ -9,6 +9,9 @@ export type RootStackParamList = {
   /** Público: acceso y registro. */
   Acceso: undefined;
   Registro: undefined;
+  Recuperar: undefined;
+  Perfil: undefined;
+  CambiarContrasena: undefined;
   /** Autenticado: pestañas principales (Inicio, Bandeja). */
   Principal: NavigatorScreenParams<PrincipalTabParamList> | undefined;
   /** Espacio de trabajo: proyectos, miembros e invitaciones. */

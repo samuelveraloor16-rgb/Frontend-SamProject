@@ -9,7 +9,7 @@
  * La app NO calcula métricas: los números vienen del backend.
  */
 import { API_BASE_URL } from './config';
-import { getToken } from './tokenStorage';
+import { getToken, getTokenVersion } from './tokenStorage';
 import type { ApiErrorBody } from './types';
 
 /** Error normalizado de la API. `statusCode: 0` = sin conexión con el servidor. */
@@ -30,6 +30,11 @@ export class ApiRequestError extends Error {
   get esErrorDeRed(): boolean {
     return this.statusCode === 0;
   }
+}
+
+/** Una escritura sin confirmación no debe repetirse automáticamente. */
+export function esEscrituraIncierta(error: unknown): boolean {
+  return !(error instanceof ApiRequestError) || error.statusCode === 0 || error.statusCode === 408 || error.statusCode >= 500;
 }
 
 /** Se invoca cuando el backend responde 401 (token inválido/expirado/versión). */
@@ -69,8 +74,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const token = auth ? getToken() : null;
+  const tokenVersion = getTokenVersion();
   if (auth) {
-    const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
@@ -91,11 +97,22 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     );
   }
 
+  // 401 autenticado es suficiente al recibir cabeceras: el cuerpo puede no
+  // llegar nunca. No confiar en una respuesta ya cancelada ni de otra sesión.
+  if (res.status === 401) {
+    if (signal?.aborted) {
+      const error = new Error('Solicitud cancelada.');
+      error.name = 'AbortError';
+      throw error;
+    }
+    if (auth && token && tokenVersion === getTokenVersion()) onUnauthorized?.();
+    throw new ApiRequestError(401, 'Unauthorized', ['No autorizado.']);
+  }
+
   if (res.status === 204) return undefined as T;
 
   if (!res.ok) {
     const errorBody = await parseErrorBody(res);
-    if (res.status === 401) onUnauthorized?.();
     throw new ApiRequestError(
       res.status,
       errorBody?.error ?? 'Error',
@@ -103,12 +120,15 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     );
   }
 
-  const text = await res.text();
+  let text: string;
+  try { text = await res.text(); } catch {
+    throw new ApiRequestError(0, 'NetworkError', ['No se pudo completar la respuesta. Revisa tu conexión.']);
+  }
   if (!text) return undefined as T;
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new ApiRequestError(res.status, 'InvalidJson', ['El servidor devolvió una respuesta inesperada.']);
+    throw new ApiRequestError(502, 'InvalidJson', ['El servidor devolvió una respuesta inesperada.']);
   }
 }
 
@@ -118,6 +138,7 @@ export function mensajeDeError(error: unknown, respaldo = 'Algo salió mal. Int�
     if (error.statusCode === 429) {
       return 'Demasiados intentos. Espera un minuto e inténtalo de nuevo.';
     }
+    if (error.statusCode >= 500) return 'El servidor no está disponible. Inténtalo de nuevo.';
     return error.mensajes.join('\n');
   }
   return respaldo;

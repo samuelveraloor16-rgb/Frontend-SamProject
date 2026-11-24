@@ -27,7 +27,7 @@ export function validarEmail(email: string): string | null {
 export function validarContrasena(contrasena: string): string | null {
   if (contrasena.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
   if (contrasena.length > 72) return 'La contraseña no puede superar los 72 caracteres.';
-  if (!/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(contrasena)) return 'La contraseña debe incluir al menos una letra.';
+  if (!/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(contrasena)) return 'La contraseña debe incluir al menos una letra de A a Z, una vocal con tilde o ñ.';
   if (!/\d/.test(contrasena)) return 'La contraseña debe incluir al menos un número.';
   return null;
 }

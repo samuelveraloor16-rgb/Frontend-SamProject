@@ -6,6 +6,7 @@ import { ErrorBanner } from '../components/ErrorBanner';
 import { FormField } from '../components/FormField';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useAuth } from '../auth/AuthContext';
+import { AutenticacionEnCursoError, RegistroSinSesionError } from '../auth/SessionController';
 import { mensajeDeError } from '../api/client';
 import {
   validarConfirmacion,
@@ -53,7 +54,7 @@ export function RegistroScreen({ navigation }: Props) {
       // entrada en la misma transacción; la app los obtiene después vía /espacios.
       await registrarse(nombre, email, contrasena);
     } catch (error) {
-      setErrorServidor(mensajeDeError(error, 'No pudimos crear tu cuenta. Inténtalo de nuevo.'));
+      setErrorServidor(error instanceof AutenticacionEnCursoError || error instanceof RegistroSinSesionError ? error.message : mensajeDeError(error, 'No pudimos crear tu cuenta. Inténtalo de nuevo.'));
     } finally {
       setEnviando(false);
     }
@@ -95,7 +96,7 @@ export function RegistroScreen({ navigation }: Props) {
       pie={
         <View className="flex-row items-center gap-1.5">
           <Text className="text-[14px] text-text">¿Ya tienes una cuenta?</Text>
-          <Pressable accessibilityRole="link" hitSlop={8} onPress={() => navigation.navigate('Acceso')}>
+          <Pressable accessibilityRole="link" disabled={enviando} accessibilityState={{ disabled: enviando }} hitSlop={8} onPress={() => navigation.navigate('Acceso')}>
             <Text className="text-[14px] font-semibold text-primary underline">Inicia sesión</Text>
           </Pressable>
         </View>
