@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { useRef, useState, type ComponentRef } from 'react';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthLayout } from '../components/AuthLayout';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -34,6 +34,10 @@ export function RegistroScreen({ navigation }: Props) {
   const [errores, setErrores] = useState<Errores>({});
   const [errorServidor, setErrorServidor] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const envioActivo = useRef(false);
+  const emailRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const confirmationRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   const validarTodo = (): Errores => ({
     nombre: validarNombre(nombre),
@@ -43,11 +47,13 @@ export function RegistroScreen({ navigation }: Props) {
   });
 
   const enviar = async () => {
+    if (envioActivo.current) return;
     setErrorServidor(null);
     const nuevos = validarTodo();
     setErrores(nuevos);
     if (Object.values(nuevos).some((e) => e)) return;
 
+    envioActivo.current = true;
     setEnviando(true);
     try {
       // Al registrarse, el backend crea el espacio personal y la Bandeja de
@@ -56,6 +62,7 @@ export function RegistroScreen({ navigation }: Props) {
     } catch (error) {
       setErrorServidor(error instanceof AutenticacionEnCursoError || error instanceof RegistroSinSesionError ? error.message : mensajeDeError(error, 'No pudimos crear tu cuenta. Inténtalo de nuevo.'));
     } finally {
+      envioActivo.current = false;
       setEnviando(false);
     }
   };
@@ -94,7 +101,7 @@ export function RegistroScreen({ navigation }: Props) {
       titulo="Crea tu cuenta"
       subtitulo="Al registrarte creamos tu espacio personal y tu Bandeja de entrada."
       pie={
-        <View className="flex-row items-center gap-1.5">
+        <View className="flex-row flex-wrap justify-center items-center gap-1.5">
           <Text className="text-[14px] text-text">¿Ya tienes una cuenta?</Text>
           <Pressable accessibilityRole="link" disabled={enviando} accessibilityState={{ disabled: enviando }} hitSlop={8} onPress={() => navigation.navigate('Acceso')}>
             <Text className="text-[14px] font-semibold text-primary underline">Inicia sesión</Text>
@@ -113,8 +120,11 @@ export function RegistroScreen({ navigation }: Props) {
         autoComplete="name"
         editable={!enviando}
         returnKeyType="next"
+        onSubmitEditing={() => emailRef.current?.focus()}
+        submitBehavior="submit"
       />
       <FormField
+        ref={emailRef}
         label="Correo"
         value={email}
         onChangeText={actualizar('email')}
@@ -126,8 +136,11 @@ export function RegistroScreen({ navigation }: Props) {
         autoCorrect={false}
         editable={!enviando}
         returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
+        submitBehavior="submit"
       />
       <FormField
+        ref={passwordRef}
         label="Contraseña"
         value={contrasena}
         onChangeText={actualizar('contrasena')}
@@ -138,11 +151,14 @@ export function RegistroScreen({ navigation }: Props) {
         autoComplete="new-password"
         editable={!enviando}
         returnKeyType="next"
+        onSubmitEditing={() => confirmationRef.current?.focus()}
+        submitBehavior="submit"
       />
       <Text className="-mt-2 mb-4 text-[12px] leading-4 text-text opacity-70">
         Mínimo 8 caracteres, con al menos una letra y un número.
       </Text>
       <FormField
+        ref={confirmationRef}
         label="Confirmar contraseña"
         value={confirmacion}
         onChangeText={actualizar('confirmacion')}

@@ -18,6 +18,137 @@ function setup(fetch) {
   return { client, change: () => { token = 'new'; version++; }, count: () => unauthorized };
 }
 const response = (status) => ({ status, ok: status >= 200 && status < 300, text: async () => JSON.stringify({ message: 'error' }) });
+// Render lógico con hooks/host simulados: no sustituye un renderer ni dispositivo nativo.
+function loadUI(path, deps) {
+  const js = ts.transpileModule(fs.readFileSync(path, 'utf8'), { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX,
+  } }).outputText;
+  const exports = {};
+  const jsx = (type, props) => ({ type, props });
+  vm.runInNewContext(js, { exports, require: name => {
+    if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
+    if (!(name in deps)) throw Error(name);
+    return deps[name];
+  }, URL, Promise, Error });
+  return exports;
+}
+function formHarness(kind, action) {
+  let slots = [], index = 0;
+  const react = {
+    useState: initial => {
+      const slot = index++;
+      if (!(slot in slots)) slots[slot] = initial;
+      return [slots[slot], value => { slots[slot] = typeof value === 'function' ? value(slots[slot]) : value; }];
+    },
+    useRef: initial => {
+      const slot = index++;
+      if (!(slot in slots)) slots[slot] = { current: initial };
+      return slots[slot];
+    },
+  };
+  class AutenticacionEnCursoError extends Error {}
+  const name = kind === 'login' ? 'LoginScreen' : 'RegistroScreen';
+  const ui = loadUI(`src/screens/${name}.tsx`, {
+    react, 'react-native': { Pressable: 'Pressable', Text: 'Text', View: 'View' },
+    '../components/AuthLayout': { AuthLayout: 'AuthLayout' },
+    '../components/FormField': { FormField: 'FormField' },
+    '../components/PrimaryButton': { PrimaryButton: 'PrimaryButton' },
+    '../components/ErrorBanner': { ErrorBanner: 'ErrorBanner' },
+    '../auth/AuthContext': { useAuth: () => ({ iniciarSesion: action, registrarse: action }) },
+    '../auth/SessionController': { AutenticacionEnCursoError, RegistroSinSesionError: class extends Error {} },
+    '../api/client': { ApiRequestError: class extends Error {}, mensajeDeError: e => e.message },
+    '../lib/validation': load('src/lib/validation.ts'),
+  });
+  const render = () => { index = 0; return ui[name]({ navigation: { navigate() {} } }); };
+  const field = (tree, label) => findNode(tree, n => n.type === 'FormField' && n.props.label === label);
+  const fill = () => {
+    let tree = render();
+    for (const [label, value] of [['Nombre', 'Ana'], ['Correo', 'ana@example.com'], ['Contraseña', 'secreta123'], ['Confirmar contraseña', 'secreta123']]) {
+      const node = field(tree, label); if (node) { node.props.onChangeText(value); tree = render(); }
+    }
+    return tree;
+  };
+  return { render, fill, field };
+}
+for (const kind of ['login', 'registro']) {
+  test(`${kind}: acción visible, validación sin envío y navegación de teclado`, async () => {
+    let calls = 0; const ui = formHarness(kind, async () => { calls++; });
+    let tree = ui.render(); const button = findNode(tree, n => n.type === 'PrimaryButton');
+    assert.equal(button.props.titulo, kind === 'login' ? 'Iniciar sesión' : 'Crear cuenta');
+    await button.props.onPress(); assert.equal(calls, 0);
+    tree = ui.render(); assert.ok(ui.field(tree, 'Correo').props.error);
+    assert.equal(ui.field(tree, 'Correo').props.value, '');
+    tree = ui.fill();
+    const chain = kind === 'login' ? ['Correo', 'Contraseña'] : ['Nombre', 'Correo', 'Contraseña', 'Confirmar contraseña'];
+    for (let i = 0; i < chain.length - 1; i++) {
+      let focuses = 0; ui.field(tree, chain[i + 1]).props.ref.current = { focus: () => focuses++ };
+      ui.field(tree, chain[i]).props.onSubmitEditing(); assert.equal(focuses, 1);
+    }
+    await ui.field(tree, chain.at(-1)).props.onSubmitEditing(); assert.equal(calls, 1);
+  });
+  for (const first of ['boton', 'teclado']) {
+    test(`${kind}: ${first} y doble envío antes/después del render ejecutan una sola acción`, async () => {
+      const pending = deferred(); let calls = 0;
+      const ui = formHarness(kind, () => { calls++; return pending.promise; });
+      const tree = ui.fill(); const button = findNode(tree, n => n.type === 'PrimaryButton');
+      const last = ui.field(tree, kind === 'login' ? 'Contraseña' : 'Confirmar contraseña');
+      const running = first === 'boton' ? button.props.onPress() : last.props.onSubmitEditing();
+      await button.props.onPress(); await last.props.onSubmitEditing(); assert.equal(calls, 1);
+      const busy = ui.render(); assert.equal(findNode(busy, n => n.type === 'PrimaryButton').props.cargando, true);
+      assert.equal(ui.field(busy, 'Correo').props.editable, false);
+      await ui.field(busy, kind === 'login' ? 'Contraseña' : 'Confirmar contraseña').props.onSubmitEditing(); assert.equal(calls, 1);
+      pending.resolve(); await running;
+      assert.equal(findNode(ui.render(), n => n.type === 'PrimaryButton').props.cargando, false);
+    });
+  }
+  test(`${kind}: error conserva borrador, libera bloqueo y permite reintento explícito`, async () => {
+    let calls = 0;
+    const ui = formHarness(kind, async () => { if (++calls === 1) throw Error('Sin conexión'); });
+    let tree = ui.fill(); await findNode(tree, n => n.type === 'PrimaryButton').props.onPress();
+    tree = ui.render(); assert.equal(findNode(tree, n => n.type === 'ErrorBanner').props.mensaje, 'Sin conexión');
+    assert.equal(ui.field(tree, 'Correo').props.value, 'ana@example.com');
+    assert.equal(findNode(tree, n => n.type === 'PrimaryButton').props.cargando, false);
+    await findNode(tree, n => n.type === 'PrimaryButton').props.onPress(); assert.equal(calls, 2);
+  });
+}
+test('PrimaryButton conserva texto/contraste/tamaño y nombre accesible durante carga y disabled', () => {
+  let pressed = false;
+  const { PrimaryButton } = loadUI('src/components/PrimaryButton.tsx', {
+    react: { useState: () => [pressed, value => { pressed = value; }] },
+    'react-native': { Pressable: 'Pressable', Text: 'Text', ActivityIndicator: 'ActivityIndicator' },
+    '../theme/colors': { colors: { primary: '#245B4A' } },
+  });
+  const render = props => PrimaryButton({ titulo: 'Guardar', onPress() {}, ...props });
+  const tree = render({}); assert.equal(typeof tree.props.style, 'object');
+  assert.equal(tree.props.style.minHeight, 52); assert.equal(tree.props.style.flexShrink, 0);
+  assert.equal(tree.props.style.backgroundColor, '#245B4A');
+  tree.props.onPressIn(); assert.equal(render({}).props.style.backgroundColor, '#1C4738');
+  tree.props.onPressOut(); assert.equal(render({}).props.style.backgroundColor, '#245B4A');
+  for (const props of [{}, { cargando: true }, { deshabilitado: true }]) {
+    const button = render(props), label = findNode(button, n => n.type === 'Text');
+    assert.equal(button.props.accessibilityLabel, 'Guardar'); assert.equal(label.props.children, 'Guardar');
+    assert.equal(label.props.style.color, '#F7F8F5'); assert.equal(label.props.style.fontSize, 16);
+    assert.equal(button.props.disabled, !!(props.cargando || props.deshabilitado));
+    assert.equal(button.props.accessibilityState.busy, !!props.cargando);
+    assert.equal(!!findNode(button, n => n.type === 'ActivityIndicator'), !!props.cargando);
+  }
+});
+test('AuthLayout declara safe area, scroll y ajuste de teclado en Android/iOS sin altura fija', () => {
+  for (const OS of ['android', 'ios']) {
+    const { AuthLayout } = loadUI('src/components/AuthLayout.tsx', {
+      'react-native': { Image: 'Image', KeyboardAvoidingView: 'KeyboardAvoidingView', Platform: { OS }, ScrollView: 'ScrollView', Text: 'Text', View: 'View' },
+      'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+      '../../assets/Logo.png': 'logo-original',
+    });
+    const tree = AuthLayout({ titulo: 'Acceso', subtitulo: '', children: 'formulario', pie: null });
+    assert.equal(tree.type, 'SafeAreaView');
+    assert.equal(findNode(tree, n => n.type === 'KeyboardAvoidingView').props.behavior, OS === 'ios' ? 'padding' : 'height');
+    const scroll = findNode(tree, n => n.type === 'ScrollView');
+    assert.equal(scroll.props.keyboardShouldPersistTaps, 'handled');
+    assert.equal(scroll.props.contentContainerStyle.flexGrow, 1);
+    assert.equal(scroll.props.children.props.className.includes('flex-1'), false);
+  }
+});
 test('401 público no cierra sesión; 401 autenticado sí', async () => {
   const x = setup(async () => response(401));
   await assert.rejects(x.client.request('/auth/login', { method: 'POST', auth: false })); assert.equal(x.count(), 0);
@@ -520,7 +651,8 @@ function perfilHarness(api, client, controller) {
     guardar:api.actualizarPerfil,consultar:api.obtenerPerfil,cambiar:api.cambiarContrasena,salir:controller.salirLocalSiSesionActual});
   controller.subscribe(perfilEscrituras.sincronizar); perfilEscrituras.sincronizar();
   const deps={react,'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})},
-    'react-native':{ActivityIndicator:'ActivityIndicator',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text'},
+    'react-native':{ActivityIndicator:'ActivityIndicator',Pressable:'Pressable',ScrollView:'ScrollView',Text:'Text',KeyboardAvoidingView:'KeyboardAvoidingView',Platform:{OS:'ios'}},
+    'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'},
     '../auth/AuthContext':{useAuth:()=>({perfilEscrituras,capturarSesion:controller.capturarSesion,esSesionActual:controller.esSesionActual,esCredencialActual:controller.esCredencialActual,actualizarUsuario:controller.actualizarUsuario,salirLocalSiSesionActual:controller.salirLocalSiSesionActual})},
     '../api/auth':api,'../api/client':client,'../components/FormField':{FormField:components.FormField},'../components/PrimaryButton':{PrimaryButton:components.PrimaryButton},'../components/ErrorBanner':{ErrorBanner:components.ErrorBanner},'../lib/validation':val};
   const src=fs.readFileSync('src/screens/PerfilScreen.tsx','utf8'); const js=ts.transpileModule(src,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.ReactJSX}}).outputText;
@@ -532,6 +664,45 @@ function findNode(root,predicate) {
   if (!root || typeof root!=='object')return undefined;
   if (predicate(root)) return root; return findNode(root.props?.children,predicate);
 }
+test('Perfil: Guardar y Listo comparten validación, no duplican PATCH y reflejan nombre confirmado', async () => {
+  const {secure}=fakeStorage(); const {c,user}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x');
+  const pending=deferred(); let writes=0, input;
+  const ui=perfilHarness({obtenerPerfil:async()=>user,actualizarPerfil:value=>{writes++;input=value;return pending.promise;}},
+    {esEscrituraIncierta:()=>false,mensajeDeError:e=>e.message},c);
+  let tree=ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render();
+  const frame=tree.type(tree.props);
+  assert.equal(frame.type,'SafeAreaView');
+  assert.equal(findNode(frame,n=>n.type==='KeyboardAvoidingView').props.behavior,'padding');
+  assert.equal(findNode(frame,n=>n.type==='ScrollView').props.keyboardShouldPersistTaps,'handled');
+  await findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress(); assert.equal(writes,0);
+  assert.match(ui.perfilEscrituras.getSnapshot().mensaje,/No hay cambios/);
+  findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('A'); tree=ui.render();
+  await findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onSubmitEditing(); assert.equal(writes,0);
+  assert.ok(findNode(ui.render(),n=>n.type==='FormField'&&n.props.label==='Nombre').props.error);
+  findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Ana María'); tree=ui.render();
+  const field=findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre');
+  const save=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar');
+  const running=field.props.onSubmitEditing(); await save.props.onPress(); await field.props.onSubmitEditing();
+  assert.equal(writes,1); assert.deepEqual(JSON.parse(JSON.stringify(input)),{nombre:'Ana María'});
+  tree=ui.render(); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.cargando,true);
+  assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.editable,false);
+  pending.resolve({...user,nombre:'Ana María'}); await running; tree=ui.render();
+  assert.equal(c.getSnapshot().usuario.nombre,'Ana María'); assert.equal(ui.perfilEscrituras.getSnapshot().mensaje,'Cambios guardados.');
+  assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Ana María');
+});
+test('Perfil: envío por teclado respeta bloqueo incierto y no repite escritura', async () => {
+  const {secure}=fakeStorage(); const {c,user}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x');
+  let writes=0;
+  const ui=perfilHarness({obtenerPerfil:async()=>user,actualizarPerfil:async()=>{writes++;throw Error('timeout');}},
+    {esEscrituraIncierta:()=>true,mensajeDeError:e=>e.message},c);
+  ui.render(); await new Promise(r=>setImmediate(r)); let tree=ui.render();
+  findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Ana María'); tree=ui.render();
+  await findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onSubmitEditing(); tree=ui.render();
+  assert.equal(ui.perfilEscrituras.getSnapshot().fase,'incierto');
+  await findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onSubmitEditing();
+  await findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress(); assert.equal(writes,1);
+  assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,true);
+});
 function patchTimeoutHarness(fetch, store) {
   let timer, aborted=0, calls=0;
   class FakeAbort {constructor(){this.signal={aborted:false};} abort(){this.signal.aborted=true;aborted++;}}
@@ -544,14 +715,14 @@ test('PATCH perfil 408 conserva borrador y bloquea guardar hasta consulta explí
   let headers,body; const h=patchTimeoutHarness(async(url,opt)=>{headers=opt.headers; body=JSON.parse(opt.body); assert.match(url,/\/perfil$/); assert.equal(opt.method,'PATCH'); return {status:408,ok:false,text:async()=>'{"message":"Request Timeout"}'};},store);
   let reads=0; const api={...h.api,obtenerPerfil:async()=>{reads++;return user;}}; const ui=perfilHarness(api,h.client,c); ui.render(); await new Promise(r=>setImmediate(r));
   let tree=ui.render(); const field=findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre'); field.props.onChangeText('Nuevo nombre');
-  tree=ui.render(); const save=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios'); await save.props.onPress(); tree=ui.render();
-  assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,true);
+  tree=ui.render(); const save=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar'); await save.props.onPress(); tree=ui.render();
+  assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,true);
   assert.match(findNode(tree,n=>n.type==='ErrorBanner'&&n.props.mensaje).props.mensaje,/No pudimos confirmar/); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Nuevo nombre');
   assert.deepEqual(body,{nombre:'Nuevo nombre'}); assert.equal(headers.Authorization,'Bearer memory-only'); assert.equal(h.calls(),1); assert.equal(reads,1); assert.equal(db.value,'memory-only');
   const retry=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Consultar perfil'); assert.ok(retry); retry.props.onPress(); await new Promise(r=>setImmediate(r));
-  tree=ui.render(); assert.equal(reads,2); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,true); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Nuevo nombre');
+  tree=ui.render(); assert.equal(reads,2); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,true); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Nuevo nombre');
   findNode(tree,n=>n.type==='Pressable'&&n.props.children?.props?.children==='He revisado; quiero continuar').props.onPress(); tree=ui.render();
-  assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,false);
+  assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,false);
 });
 test('PATCH contraseña 408 limpia SecureStore y exige reingreso sin declarar éxito', async () => {
   const {db,secure}=fakeStorage(null); const {c,store}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x');
@@ -565,8 +736,8 @@ test('timeout de fetch PATCH perfil es incierto; 200 tardío no anuncia guardado
   const {db,secure}=fakeStorage(null); const {c,store,user}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x'); const network=deferred();
   const h=patchTimeoutHarness(()=>network.promise,store); const ui=perfilHarness({...h.api,obtenerPerfil:async()=>user},h.client,c); ui.render(); await new Promise(r=>setImmediate(r)); let tree=ui.render();
   findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Nombre editado'); tree=ui.render();
-  const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.onPress(); await new Promise(r=>setImmediate(r)); h.expire(); await pending;
-  tree=ui.render(); assert.match(findNode(tree,n=>n.type==='ErrorBanner'&&n.props.mensaje).props.mensaje,/servidor podría procesarlos más tarde/); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,true);
+  const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress(); await new Promise(r=>setImmediate(r)); h.expire(); await pending;
+  tree=ui.render(); assert.match(findNode(tree,n=>n.type==='ErrorBanner'&&n.props.mensaje).props.mensaje,/servidor podría procesarlos más tarde/); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,true);
   network.resolve({status:200,ok:true,text:async()=>JSON.stringify({...user,nombre:'Nombre editado'})}); await new Promise(r=>setImmediate(r)); tree=ui.render();
   assert.equal(c.getSnapshot().usuario.nombre,user.nombre); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Nombre editado'); assert.equal(db.value,'memory-only'); assert.equal(h.calls(),1); assert.equal(h.aborted(),1);
 });
@@ -574,7 +745,7 @@ test('cuerpo PATCH perfil colgado y respuesta tardía A no modifica sesión B', 
   const {db,secure}=fakeStorage(null); let count=0; const a={id:'A',nombre:'Ana',email:'a@example.com',fotoUrl:null}, b={id:'B',nombre:'Beatriz',email:'b@example.com',fotoUrl:null};
   const {c,store}=sessionHarness(secure,{login:async()=>({usuario:++count===1?a:b,accessToken:'token-'+count})}); await c.bootstrap(); await c.iniciarSesion('a','x'); const body=deferred();
   const h=patchTimeoutHarness(async()=>({status:200,ok:true,text:()=>body.promise}),store); const ui=perfilHarness({...h.api,obtenerPerfil:async()=>a},h.client,c); ui.render(); await new Promise(r=>setImmediate(r)); let tree=ui.render();
-  findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Cambio de A'); tree=ui.render(); const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.onPress(); await new Promise(r=>setImmediate(r));
+  findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Cambio de A'); tree=ui.render(); const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress(); await new Promise(r=>setImmediate(r));
   await c.salirLocal(); await c.iniciarSesion('b','x'); h.expire(); await pending; body.resolve(JSON.stringify({...a,nombre:'Cambio de A'})); await new Promise(r=>setImmediate(r));
   assert.equal(c.getSnapshot().estado,'autenticado'); assert.equal(c.getSnapshot().usuario.id,'B'); assert.equal(c.getSnapshot().usuario.nombre,'Beatriz'); assert.equal(db.value,'token-2'); assert.equal(h.calls(),1);
 });
@@ -604,7 +775,7 @@ test('red y 503 en PATCH de perfil o contraseña se tratan como inciertos sin re
     const {db,secure}=fakeStorage(null); const {c,store,user}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x');
     const h=patchTimeoutHarness(async()=>{if(mode==='red') throw Error('offline'); return {status:503,ok:false,text:async()=>'{"message":"unavailable"}'};},store);
     const ui=perfilHarness({...h.api,obtenerPerfil:async()=>user},h.client,c); let tree=ui.render(kind==='perfil'?'PerfilScreen':'CambiarContrasenaScreen');
-    if(kind==='perfil') {await new Promise(r=>setImmediate(r)); tree=ui.render(); findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Nombre editado'); tree=ui.render(); await findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.onPress(); tree=ui.render(); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,true); assert.match(findNode(tree,n=>n.type==='ErrorBanner'&&n.props.mensaje).props.mensaje,/No pudimos confirmar/); assert.equal(db.value,'memory-only'); }
+    if(kind==='perfil') {await new Promise(r=>setImmediate(r)); tree=ui.render(); findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Nombre editado'); tree=ui.render(); await findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress(); tree=ui.render(); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,true); assert.match(findNode(tree,n=>n.type==='ErrorBanner'&&n.props.mensaje).props.mensaje,/No pudimos confirmar/); assert.equal(db.value,'memory-only'); }
     else {for(const [label,value] of [['Contraseña actual','actual123'],['Nueva contraseña','nueva123'],['Confirmar nueva contraseña','nueva123']]) {findNode(tree,n=>n.type==='FormField'&&n.props.label===label).props.onChangeText(value); tree=ui.render('CambiarContrasenaScreen');} await findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Cambiar contraseña').props.onPress(); assert.equal(c.getSnapshot().estado,'no-autenticado'); assert.match(c.getSnapshot().aviso,/No pudimos confirmar/); assert.equal(db.value,null);}
     assert.equal(h.calls(),1);
   }
@@ -613,34 +784,34 @@ test('desmontar y reabrir perfil mientras guarda conserva borrador y bloquea dup
   const {secure}=fakeStorage(null); const {c,store,user}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x'); const responsePending=deferred();
   const h=patchTimeoutHarness(()=>responsePending.promise,store); let reads=0; const ui=perfilHarness({...h.api,obtenerPerfil:async()=>{reads++; return user;}},h.client,c);
   ui.render(); await new Promise(r=>setImmediate(r)); let tree=ui.render(); findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Borrador persistente'); tree=ui.render();
-  const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.onPress(); await new Promise(r=>setImmediate(r)); ui.unmount(); ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render();
-  const save=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios'); assert.equal(save.props.cargando,true); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Borrador persistente');
+  const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress(); await new Promise(r=>setImmediate(r)); ui.unmount(); ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render();
+  const save=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar'); assert.equal(save.props.cargando,true); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Borrador persistente');
   await save.props.onPress(); assert.equal(h.calls(),1); assert.equal(reads,2);
-  responsePending.resolve({status:200,ok:true,text:async()=>JSON.stringify({...user,nombre:'Borrador persistente'})}); await pending; tree=ui.render(); assert.equal(c.getSnapshot().usuario.nombre,'Borrador persistente'); assert.equal(save.props.cargando,true); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.cargando,false);
+  responsePending.resolve({status:200,ok:true,text:async()=>JSON.stringify({...user,nombre:'Borrador persistente'})}); await pending; tree=ui.render(); assert.equal(c.getSnapshot().usuario.nombre,'Borrador persistente'); assert.equal(save.props.cargando,true); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.cargando,false);
 });
 test('reabrir tras 408 no reconcilia automáticamente y exige revisión consciente', async () => {
   const {secure}=fakeStorage(null); const {c,store,user}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x'); let reads=0;
   const h=patchTimeoutHarness(async()=>({status:408,ok:false,text:async()=>'{"message":"timeout"}'}),store); const ui=perfilHarness({...h.api,obtenerPerfil:async()=>{reads++; return user;}},h.client,c);
-  ui.render(); await new Promise(r=>setImmediate(r)); let tree=ui.render(); findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Borrador'); tree=ui.render(); await findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.onPress();
-  ui.unmount(); ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render(); assert.equal(reads,2); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,true); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Borrador');
-  await findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.onPress(); assert.equal(h.calls(),1);
-  findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Consultar perfil').props.onPress(); await new Promise(r=>setImmediate(r)); tree=ui.render(); assert.equal(reads,3); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,true);
-  assert.match(ui.perfilEscrituras.getSnapshot().mensaje,/aún podría procesarse más tarde/); findNode(tree,n=>n.type==='Pressable'&&n.props.children?.props?.children==='He revisado; quiero continuar').props.onPress(); tree=ui.render(); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,false);
+  ui.render(); await new Promise(r=>setImmediate(r)); let tree=ui.render(); findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Borrador'); tree=ui.render(); await findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress();
+  ui.unmount(); ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render(); assert.equal(reads,2); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,true); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Borrador');
+  await findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress(); assert.equal(h.calls(),1);
+  findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Consultar perfil').props.onPress(); await new Promise(r=>setImmediate(r)); tree=ui.render(); assert.equal(reads,3); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,true);
+  assert.match(ui.perfilEscrituras.getSnapshot().mensaje,/aún podría procesarse más tarde/); findNode(tree,n=>n.type==='Pressable'&&n.props.children?.props?.children==='He revisado; quiero continuar').props.onPress(); tree=ui.render(); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,false);
 });
 test('timeout y deep link de reset conservan incertidumbre y borrador al reabrir', async () => {
   const {secure}=fakeStorage(null); const {c,store,user}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x'); const network=deferred();
   const h=patchTimeoutHarness(()=>network.promise,store); const ui=perfilHarness({...h.api,obtenerPerfil:async()=>user},h.client,c); ui.render(); await new Promise(r=>setImmediate(r)); let tree=ui.render();
-  findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Borrador pendiente'); tree=ui.render(); const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.onPress(); await new Promise(r=>setImmediate(r));
+  findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Borrador pendiente'); tree=ui.render(); const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress(); await new Promise(r=>setImmediate(r));
   const {ResetLinkCoordinator}=load('src/lib/resetLink.ts'); const links=new ResetLinkCoordinator(); const link=links.receive('samproject://reset?token='+'a'.repeat(64)); ui.unmount();
   h.expire(); await pending; const reset=c.iniciarReset(); await c.finalizarReset(reset,'exito'); assert.equal(links.close(link.id),null);
-  ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render(); assert.equal(ui.perfilEscrituras.getSnapshot().fase,'incierto'); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Borrador pendiente'); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,true);
+  ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render(); assert.equal(ui.perfilEscrituras.getSnapshot().fase,'incierto'); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Borrador pendiente'); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,true);
   network.resolve({status:200,ok:true,text:async()=>JSON.stringify({...user,nombre:'Borrador pendiente'})}); await new Promise(r=>setImmediate(r)); assert.equal(ui.perfilEscrituras.getSnapshot().fase,'incierto'); assert.equal(h.calls(),1);
 });
 test('logout y cambio de identidad borran borrador y no aplican 200 tardío de A en B', async () => {
   const {db,secure}=fakeStorage(null); let count=0; const a={id:'A',nombre:'Ana',email:'a@example.com',fotoUrl:null}, b={id:'B',nombre:'Beatriz',email:'b@example.com',fotoUrl:null};
   const {c,store}=sessionHarness(secure,{login:async()=>({usuario:++count===1?a:b,accessToken:'token-'+count})}); await c.bootstrap(); await c.iniciarSesion('a','x'); const network=deferred();
   const h=patchTimeoutHarness(()=>network.promise,store); const ui=perfilHarness({...h.api,obtenerPerfil:async()=>c.getSnapshot().usuario},h.client,c); ui.render(); await new Promise(r=>setImmediate(r)); let tree=ui.render(); findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Borrador privado A'); tree=ui.render();
-  const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.onPress(); await new Promise(r=>setImmediate(r)); ui.unmount(); await c.salirLocal(); assert.equal(ui.perfilEscrituras.getSnapshot().nombre,''); await c.iniciarSesion('b','x');
+  const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress(); await new Promise(r=>setImmediate(r)); ui.unmount(); await c.salirLocal(); assert.equal(ui.perfilEscrituras.getSnapshot().nombre,''); await c.iniciarSesion('b','x');
   ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render(); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Beatriz'); assert.equal(ui.perfilEscrituras.getSnapshot().fase,'listo');
   network.resolve({status:200,ok:true,text:async()=>JSON.stringify({...a,nombre:'Borrador privado A'})}); await pending; assert.equal(c.getSnapshot().usuario.id,'B'); assert.equal(ui.perfilEscrituras.getSnapshot().nombre,'Beatriz'); assert.equal(db.value,'token-2');
 });
@@ -655,10 +826,10 @@ test('cambio de contraseña en curso sobrevive desmontaje sin guardar contraseñ
 test('reset profundo durante guardado conserva bloqueo y procesa 408 aunque perfil esté desmontado', async () => {
   const {secure}=fakeStorage(null); const {c,store,user}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x'); const network=deferred();
   const h=patchTimeoutHarness(()=>network.promise,store); const ui=perfilHarness({...h.api,obtenerPerfil:async()=>user},h.client,c); ui.render(); await new Promise(r=>setImmediate(r)); let tree=ui.render();
-  findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Nombre en vuelo'); tree=ui.render(); const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.onPress();
+  findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.onChangeText('Nombre en vuelo'); tree=ui.render(); const pending=findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.onPress();
   await new Promise(r=>setImmediate(r)); ui.unmount(); const {ResetLinkCoordinator}=load('src/lib/resetLink.ts'); const links=new ResetLinkCoordinator(); const link=links.receive('samproject://reset?token='+'c'.repeat(64)); const id=c.iniciarReset(); await c.finalizarReset(id,'exito'); assert.equal(links.close(link.id),null);
   assert.equal(ui.perfilEscrituras.getSnapshot().fase,'guardando'); network.resolve({status:408,ok:false,text:async()=>'{"message":"timeout"}'}); await pending;
-  ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render(); assert.equal(ui.perfilEscrituras.getSnapshot().fase,'incierto'); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar cambios').props.deshabilitado,true); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Nombre en vuelo'); assert.equal(h.calls(),1);
+  ui.render(); await new Promise(r=>setImmediate(r)); tree=ui.render(); assert.equal(ui.perfilEscrituras.getSnapshot().fase,'incierto'); assert.equal(findNode(tree,n=>n.type==='PrimaryButton'&&n.props.titulo==='Guardar').props.deshabilitado,true); assert.equal(findNode(tree,n=>n.type==='FormField'&&n.props.label==='Nombre').props.value,'Nombre en vuelo'); assert.equal(h.calls(),1);
 });
 test('contraseña 408 tras desmontar sigue política local sin almacenar secretos', async () => {
   const {db,secure}=fakeStorage(null); const {c,store}=sessionHarness(secure); await c.bootstrap(); await c.iniciarSesion('a','x'); const network=deferred();

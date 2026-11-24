@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Image,
   KeyboardAvoidingView,
@@ -22,8 +23,9 @@ type AuthLayoutProps = {
  */
 export function AuthLayout({ titulo, subtitulo, children, pie }: AuthLayoutProps) {
   return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F8F5' }}>
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       className="flex-1 bg-background"
     >
       <ScrollView
@@ -31,7 +33,7 @@ export function AuthLayout({ titulo, subtitulo, children, pie }: AuthLayoutProps
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View className="flex-1 items-center px-6 pb-8 pt-12">
+        <View className="items-center px-6 pb-8 pt-12">
           <Image
             source={require('../../assets/Logo.png')}
             accessibilityLabel="Logotipo de SamProject"
@@ -56,5 +58,6 @@ export function AuthLayout({ titulo, subtitulo, children, pie }: AuthLayoutProps
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

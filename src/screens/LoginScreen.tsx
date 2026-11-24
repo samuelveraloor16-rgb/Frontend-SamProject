@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { useRef, useState, type ComponentRef } from 'react';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthLayout } from '../components/AuthLayout';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -20,20 +20,25 @@ export function LoginScreen({ navigation }: Props) {
   const [errores, setErrores] = useState<{ email?: string | null; contrasena?: string | null }>({});
   const [errorServidor, setErrorServidor] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const envioActivo = useRef(false);
+  const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   const enviar = async () => {
+    if (envioActivo.current) return;
     setErrorServidor(null);
     const emailError = validarEmail(email);
     const contrasenaError = contrasena.trim().length === 0 ? 'Ingresa tu contraseña.' : null;
     setErrores({ email: emailError, contrasena: contrasenaError });
     if (emailError || contrasenaError) return;
 
+    envioActivo.current = true;
     setEnviando(true);
     try {
       await iniciarSesion(email, contrasena);
     } catch (error) {
       setErrorServidor(error instanceof AutenticacionEnCursoError ? error.message : error instanceof ApiRequestError && error.statusCode === 401 ? 'Correo o contraseña incorrectos.' : mensajeDeError(error, 'No pudimos iniciar sesión. Inténtalo de nuevo.'));
     } finally {
+      envioActivo.current = false;
       setEnviando(false);
     }
   };
@@ -43,7 +48,7 @@ export function LoginScreen({ navigation }: Props) {
       titulo="Inicia sesión"
       subtitulo="Vuelve a tu espacio: tus proyectos, tareas y tu Bandeja te esperan."
       pie={
-        <View className="flex-row items-center gap-1.5">
+        <View className="flex-row flex-wrap justify-center items-center gap-1.5">
           <Text className="text-[14px] text-text">¿Aún no tienes cuenta?</Text>
           <Pressable
              accessibilityRole="link"
@@ -74,8 +79,11 @@ export function LoginScreen({ navigation }: Props) {
         autoCorrect={false}
         editable={!enviando}
         returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
+        submitBehavior="submit"
       />
       <FormField
+        ref={passwordRef}
         label="Contraseña"
         value={contrasena}
         onChangeText={(t) => {
@@ -95,7 +103,7 @@ export function LoginScreen({ navigation }: Props) {
         onSubmitEditing={enviar}
       />
       <View className="mt-2">
-        <PrimaryButton titulo="Entrar" onPress={enviar} cargando={enviando} />
+        <PrimaryButton titulo="Iniciar sesión" onPress={enviar} cargando={enviando} />
       </View>
       <Pressable accessibilityRole="button" disabled={enviando} accessibilityState={{ disabled: enviando }} onPress={() => navigation.navigate('Recuperar')} style={{ minHeight: 48, justifyContent: 'center' }}><Text className="text-primary font-semibold underline">¿Olvidaste tu contraseña?</Text></Pressable>
     </AuthLayout>

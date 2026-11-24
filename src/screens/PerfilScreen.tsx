@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
 import { obtenerPerfil } from '../api/auth';
@@ -12,10 +13,10 @@ import { validarNombre, validarContrasena, validarConfirmacion } from '../lib/va
 import type { RootStackParamList } from '../navigation/types';
 
 function Marco({ titulo, children, volver }: { titulo: string; children: ReactNode; volver: () => void }) {
-  return <ScrollView keyboardShouldPersistTaps="handled" className="flex-1 bg-background" contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 64, paddingBottom: 48 }}>
+  return <SafeAreaView style={{ flex: 1, backgroundColor: '#F7F8F5' }}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><ScrollView keyboardShouldPersistTaps="handled" className="flex-1 bg-background" contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 64, paddingBottom: 48 }}>
     <Pressable accessibilityRole="button" onPress={volver} style={{ minHeight: 44, justifyContent: 'center' }}><Text className="text-primary font-semibold">‹ Volver</Text></Pressable>
     <Text accessibilityRole="header" style={{ fontFamily: 'Georgia' }} className="text-[28px] text-primary mb-6">{titulo}</Text>{children}
-  </ScrollView>;
+  </ScrollView></KeyboardAvoidingView></SafeAreaView>;
 }
 
 export function PerfilScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Perfil'>) {
@@ -37,6 +38,8 @@ export function PerfilScreen({ navigation }: NativeStackScreenProps<RootStackPar
   }
   useEffect(() => { void Promise.resolve().then(() => cargar()); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   async function guardar() {
+    // La acción del teclado también respeta el estado actual, no solo el render.
+    if (perfilEscrituras.getSnapshot().fase !== 'listo') return;
     const nombre = datos.nombre.trim(), foto = datos.foto.trim();
     let fotoError: string | null = null;
     if (foto) { try { const url = new URL(foto); if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) fotoError = 'Ingresa una URL http o https válida.'; } catch { fotoError = 'Ingresa una URL http o https válida.'; } }
@@ -51,13 +54,13 @@ export function PerfilScreen({ navigation }: NativeStackScreenProps<RootStackPar
       {perfil && <>
         <Text className="text-text mb-4">Correo: {perfil.email}</Text>
         <ErrorBanner mensaje={datos.error} />
-        <FormField label="Nombre" accessibilityLabel="Nombre" value={datos.nombre} onChangeText={perfilEscrituras.editarNombre} error={campo.nombre} editable={datos.fase !== 'guardando' && datos.fase !== 'consultando'} />
-        <FormField label="Foto (URL)" accessibilityLabel="Foto (URL)" value={datos.foto} onChangeText={perfilEscrituras.editarFoto} error={campo.foto} autoCapitalize="none" autoCorrect={false} keyboardType="url" editable={datos.fase !== 'guardando' && datos.fase !== 'consultando'} />
+        <FormField label="Nombre" accessibilityLabel="Nombre" value={datos.nombre} onChangeText={perfilEscrituras.editarNombre} error={campo.nombre} editable={datos.fase !== 'guardando' && datos.fase !== 'consultando'} returnKeyType="done" onSubmitEditing={guardar} />
+        <FormField label="Foto (URL)" accessibilityLabel="Foto (URL)" value={datos.foto} onChangeText={perfilEscrituras.editarFoto} error={campo.foto} autoCapitalize="none" autoCorrect={false} keyboardType="url" editable={datos.fase !== 'guardando' && datos.fase !== 'consultando'} returnKeyType="done" onSubmitEditing={guardar} />
         <Pressable accessibilityRole="button" disabled={datos.fase === 'guardando' || datos.fase === 'consultando'} onPress={perfilEscrituras.quitarFoto} style={{ minHeight: 48, justifyContent: 'center' }}><Text className="text-primary underline">Quitar foto</Text></Pressable>
         {datos.mensaje && <Text accessibilityLiveRegion="polite" className="text-text mb-3">{datos.mensaje}</Text>}
         {(datos.fase === 'incierto' || datos.fase === 'consultando') && <PrimaryButton titulo="Consultar perfil" onPress={() => void perfilEscrituras.consultar()} cargando={datos.fase === 'consultando'} />}
         {datos.fase === 'revisar' && <Pressable accessibilityRole="button" onPress={perfilEscrituras.aceptarRevision} style={{ minHeight: 48, justifyContent: 'center' }}><Text className="text-primary font-semibold underline">He revisado; quiero continuar</Text></Pressable>}
-        <PrimaryButton titulo="Guardar cambios" onPress={guardar} cargando={datos.fase === 'guardando'} deshabilitado={bloqueado && datos.fase !== 'guardando'} />
+        <PrimaryButton titulo="Guardar" onPress={guardar} cargando={datos.fase === 'guardando'} deshabilitado={bloqueado && datos.fase !== 'guardando'} />
         <Pressable accessibilityRole="button" onPress={() => navigation.navigate('CambiarContrasena')} style={{ minHeight: 56, justifyContent: 'center' }}><Text className="text-primary font-semibold">Cambiar contraseña ›</Text></Pressable>
       </>}
     </>}
