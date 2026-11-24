@@ -10,23 +10,43 @@ import { validarEmail, validarContrasena, validarConfirmacion } from '../lib/val
 import { useAuth } from '../auth/AuthContext';
 import { clasificarErrorReset400 } from '../lib/resetErrors';
 import { ejecutarReset } from '../auth/resetOperation';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation/types';
 
 function Link({ texto, onPress }: { texto: string; onPress: () => void }) {
   return <Pressable accessibilityRole="button" onPress={onPress} style={{ minHeight: 48, justifyContent: 'center' }}><Text className="text-primary font-semibold underline">{texto}</Text></Pressable>;
 }
-export function RecuperarScreen({ navigation }: { navigation: { goBack: () => void } }) {
+type RecuperarNavigation = Pick<NativeStackNavigationProp<RootStackParamList, 'Recuperar'>, 'reset'> | { goBack: () => void };
+export function RecuperarScreen({ navigation }: { navigation: RecuperarNavigation }) {
+  const envioActivo = useRef(false);
   const [email, setEmail] = useState(''); const [error, setError] = useState<string | null>(null);
   const [campo, setCampo] = useState<string | null>(null); const [cargando, setCargando] = useState(false); const [hecho, setHecho] = useState(false);
   async function enviar() {
     if (cargando) return; const problema = validarEmail(email); setCampo(problema); if (problema) return;
-    setCargando(true); setError(null);
+    envioActivo.current = true; setCargando(true); setError(null);
     try { await solicitarRecuperacion(email.trim().toLowerCase()); setHecho(true); }
     catch (e) { setError(e instanceof ApiRequestError && (e.esErrorDeRed || e.statusCode >= 500) ? 'No pudimos confirmar la solicitud. Puedes intentarlo de nuevo.' : mensajeDeError(e)); }
-    finally { setCargando(false); }
+    finally { envioActivo.current = false; setCargando(false); }
   }
+  const volverAAcceso = () => {
+    if (envioActivo.current) return;
+    if ('reset' in navigation) navigation.reset({ index: 0, routes: [{ name: 'Acceso' }] });
+    // La solicitud superpuesta tras un enlace usa su callback de cierre existente.
+    else navigation.goBack();
+  };
   return <AuthLayout pie={null} titulo="Recuperar contraseña" subtitulo={hecho ? 'Si el correo existe, recibirás un enlace para restablecer tu contraseña.' : 'Escribe tu correo para solicitar un enlace.'}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Volver a iniciar sesión"
+      accessibilityState={{ disabled: cargando }}
+      disabled={cargando}
+      onPress={volverAAcceso}
+      style={{ minHeight: 44, minWidth: 44, alignSelf: 'flex-start', justifyContent: 'center', marginBottom: 16 }}
+    >
+      <Text style={{ color: '#245B4A', fontSize: 16, fontWeight: '600' }}>← Volver</Text>
+    </Pressable>
     {!hecho && <><ErrorBanner mensaje={error} /><FormField label="Correo" accessibilityLabel="Correo" value={email} onChangeText={setEmail} error={campo} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" editable={!cargando} /><PrimaryButton titulo="Enviar enlace" onPress={enviar} cargando={cargando} /></>}
-    <Link texto="Volver a iniciar sesión" onPress={navigation.goBack} />
+    <Pressable accessibilityRole="button" accessibilityState={{ disabled: cargando }} disabled={cargando} onPress={volverAAcceso} style={{ minHeight: 48, justifyContent: 'center' }}><Text className="text-primary font-semibold underline">Volver a iniciar sesión</Text></Pressable>
   </AuthLayout>;
 }
 export function ResetScreen({ token, cerrar, solicitar, descartar, esActual }: { token: string | null; cerrar: () => void; solicitar: () => void; descartar: () => void; esActual: () => boolean }) {

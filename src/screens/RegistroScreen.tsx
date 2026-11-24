@@ -39,6 +39,12 @@ export function RegistroScreen({ navigation }: Props) {
   const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
   const confirmationRef = useRef<ComponentRef<typeof TextInput>>(null);
 
+  const volverAAcceso = () => {
+    if (envioActivo.current) return;
+    // No apilar Acceso sobre Registro, incluso si se abrió sin historial.
+    navigation.reset({ index: 0, routes: [{ name: 'Acceso' }] });
+  };
+
   const validarTodo = (): Errores => ({
     nombre: validarNombre(nombre),
     email: validarEmail(email),
@@ -103,12 +109,22 @@ export function RegistroScreen({ navigation }: Props) {
       pie={
         <View className="flex-row flex-wrap justify-center items-center gap-1.5">
           <Text className="text-[14px] text-text">¿Ya tienes una cuenta?</Text>
-          <Pressable accessibilityRole="link" disabled={enviando} accessibilityState={{ disabled: enviando }} hitSlop={8} onPress={() => navigation.navigate('Acceso')}>
+          <Pressable accessibilityRole="link" disabled={enviando} accessibilityState={{ disabled: enviando }} hitSlop={8} onPress={volverAAcceso}>
             <Text className="text-[14px] font-semibold text-primary underline">Inicia sesión</Text>
           </Pressable>
         </View>
       }
     >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Volver a iniciar sesión"
+        accessibilityState={{ disabled: enviando }}
+        disabled={enviando}
+        onPress={volverAAcceso}
+        style={{ minHeight: 44, minWidth: 44, alignSelf: 'flex-start', justifyContent: 'center', marginBottom: 16 }}
+      >
+        <Text style={{ color: '#245B4A', fontSize: 16, fontWeight: '600' }}>← Volver</Text>
+      </Pressable>
       <ErrorBanner mensaje={errorServidor} />
       <FormField
         label="Nombre"

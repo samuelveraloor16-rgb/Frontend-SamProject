@@ -32,7 +32,7 @@ function loadUI(path, deps) {
   }, URL, Promise, Error });
   return exports;
 }
-function formHarness(kind, action) {
+function formHarness(kind, action, navigation = { navigate() {} }) {
   let slots = [], index = 0;
   const react = {
     useState: initial => {
@@ -47,8 +47,8 @@ function formHarness(kind, action) {
     },
   };
   class AutenticacionEnCursoError extends Error {}
-  const name = kind === 'login' ? 'LoginScreen' : 'RegistroScreen';
-  const ui = loadUI(`src/screens/${name}.tsx`, {
+  const name = kind === 'login' ? 'LoginScreen' : kind === 'recuperar' ? 'RecuperarScreen' : 'RegistroScreen';
+  const ui = loadUI(`src/screens/${kind === 'recuperar' ? 'RecuperacionScreen' : name}.tsx`, {
     react, 'react-native': { Pressable: 'Pressable', Text: 'Text', View: 'View' },
     '../components/AuthLayout': { AuthLayout: 'AuthLayout' },
     '../components/FormField': { FormField: 'FormField' },
@@ -58,8 +58,11 @@ function formHarness(kind, action) {
     '../auth/SessionController': { AutenticacionEnCursoError, RegistroSinSesionError: class extends Error {} },
     '../api/client': { ApiRequestError: class extends Error {}, mensajeDeError: e => e.message },
     '../lib/validation': load('src/lib/validation.ts'),
+    '../api/auth': { solicitarRecuperacion: action },
+    '../lib/resetErrors': {},
+    '../auth/resetOperation': {},
   });
-  const render = () => { index = 0; return ui[name]({ navigation: { navigate() {} } }); };
+  const render = () => { index = 0; return ui[name]({ navigation }); };
   const field = (tree, label) => findNode(tree, n => n.type === 'FormField' && n.props.label === label);
   const fill = () => {
     let tree = render();
@@ -70,6 +73,111 @@ function formHarness(kind, action) {
   };
   return { render, fill, field };
 }
+test('recuperar: flecha accesible y ambas salidas sin solicitud ni historial residual', async () => {
+  const { StackRouter, CommonActions } = await import('@react-navigation/routers');
+  for (const names of [['Acceso', 'Recuperar'], ['Recuperar']]) {
+    for (const control of ['flecha', 'pie']) {
+      const router = StackRouter({ initialRouteName: 'Acceso' });
+      const options = { routeNames: ['Acceso', 'Registro', 'Recuperar'], routeParamList: {}, routeGetIdList: {} };
+      let state = router.getRehydratedState({ stale: true, index: names.length - 1, routes: names.map(name => ({ name })) }, options);
+      const ui = formHarness('recuperar', () => assert.fail('No solicitar al volver'), {
+        reset: next => { state = router.getStateForAction(state, CommonActions.reset(next), options); },
+      });
+      const tree = ui.fill();
+      const back = findNode(tree, n => n.props.accessibilityLabel === 'Volver a iniciar sesión');
+      assert.equal(back.props.accessibilityRole, 'button');
+      assert.equal(back.props.disabled, false);
+      assert.ok(back.props.style.minHeight >= 44 && back.props.style.minWidth >= 44);
+      const label = findNode(back, n => n.type === 'Text');
+      assert.equal(label.props.children, '← Volver'); assert.equal(label.props.style.color, '#245B4A');
+      const footer = findNode(tree, n => n.type === 'Pressable' && !n.props.accessibilityLabel);
+      assert.equal(footer.props.onPress, back.props.onPress);
+      (control === 'flecha' ? back : footer).props.onPress();
+      assert.deepEqual(Array.from(state.routes, r => r.name), ['Acceso']);
+      assert.equal(router.getStateForAction(state, CommonActions.goBack(), options), null);
+    }
+  }
+});
+
+test('recuperar: bloquea salidas durante envío y mantiene ambas en confirmación', async () => {
+  const pending = deferred(); let calls = 0, resets = 0;
+  const ui = formHarness('recuperar', () => { calls++; return pending.promise; }, { reset() { resets++; } });
+  const exits = tree => [findNode(tree, n => n.props.accessibilityLabel === 'Volver a iniciar sesión'), findNode(tree, n => n.type === 'Pressable' && !n.props.accessibilityLabel)];
+  const tree = ui.fill();
+  const running = findNode(tree, n => n.type === 'PrimaryButton').props.onPress();
+  exits(tree).forEach(n => n.props.onPress()); assert.equal(resets, 0);
+  exits(ui.render()).forEach(n => { assert.equal(n.props.disabled, true); assert.equal(n.props.accessibilityState.disabled, true); n.props.onPress(); });
+  assert.equal(resets, 0); pending.resolve(); await running;
+  const done = ui.render(); assert.match(done.props.subtitulo, /Si el correo existe/);
+  assert.equal(findNode(done, n => n.type === 'PrimaryButton'), undefined);
+  exits(done).forEach(n => { assert.equal(n.props.disabled, false); n.props.onPress(); });
+  assert.equal(resets, 2); assert.equal(calls, 1);
+});
+
+test('recuperar: salida superpuesta conserva callback y no solicita recuperación', () => {
+  let closed = 0;
+  const ui = formHarness('recuperar', () => assert.fail('No solicitar'), { goBack() { closed++; } });
+  findNode(ui.render(), n => n.props.accessibilityLabel === 'Volver a iniciar sesión').props.onPress();
+  assert.equal(closed, 1);
+});
+
+test('registro: Volver visible, accesible y con área mínima; comparte salida con el pie', () => {
+  const ui = formHarness('registro', () => assert.fail('No debe registrar al volver'));
+  const tree = ui.render();
+  const back = findNode(tree, n => n.props.accessibilityLabel === 'Volver a iniciar sesión');
+  assert.equal(back.props.accessibilityRole, 'button');
+  assert.equal(back.props.disabled, false);
+  assert.equal(back.props.accessibilityState.disabled, false);
+  assert.ok(back.props.style.minHeight >= 44 && back.props.style.minWidth >= 44);
+  const label = findNode(back, n => n.type === 'Text');
+  assert.equal(label.props.children, '← Volver');
+  assert.equal(label.props.style.color, '#245B4A');
+  const footer = findNode(tree.props.pie, n => n.type === 'Pressable');
+  assert.equal(footer.props.onPress, back.props.onPress);
+});
+
+test('registro: ambas salidas limpian historial normal y entrada directa con router instalado', async () => {
+  const { StackRouter, CommonActions } = await import('@react-navigation/routers');
+  for (const names of [['Acceso', 'Registro'], ['Registro']]) {
+    for (const control of ['volver', 'pie']) {
+      const router = StackRouter({ initialRouteName: 'Acceso' });
+      const options = { routeNames: ['Acceso', 'Registro', 'Recuperar', 'AceptarInvitacion'], routeParamList: {}, routeGetIdList: {} };
+      let state = router.getRehydratedState({ stale: true, index: names.length - 1, routes: names.map(name => ({ name })) }, options);
+      let resets = 0, registrations = 0;
+      const ui = formHarness('registro', () => { registrations++; }, {
+        reset: next => { resets++; state = router.getStateForAction(state, CommonActions.reset(next), options); },
+      });
+      const tree = ui.fill();
+      const target = control === 'volver'
+        ? findNode(tree, n => n.props.accessibilityLabel === 'Volver a iniciar sesión')
+        : findNode(tree.props.pie, n => n.type === 'Pressable');
+      target.props.onPress();
+      assert.equal(registrations, 0); assert.equal(resets, 1);
+      assert.deepEqual(Array.from(state.routes, r => r.name), ['Acceso']); assert.equal(state.index, 0);
+      assert.equal(router.getStateForAction(state, CommonActions.goBack(), options), null);
+    }
+  }
+});
+
+test('registro: bloquea ambas salidas durante envío incluso antes de render y libera tras error', async () => {
+  const pending = deferred(); let resets = 0, calls = 0;
+  const ui = formHarness('registro', () => { calls++; return pending.promise; }, { reset() { resets++; } });
+  const tree = ui.fill();
+  const back = t => findNode(t, n => n.props.accessibilityLabel === 'Volver a iniciar sesión');
+  const footer = t => findNode(t.props.pie, n => n.type === 'Pressable');
+  const running = findNode(tree, n => n.type === 'PrimaryButton').props.onPress();
+  back(tree).props.onPress(); footer(tree).props.onPress(); assert.equal(resets, 0);
+  const busy = ui.render();
+  for (const node of [back(busy), footer(busy)]) {
+    assert.equal(node.props.disabled, true); assert.equal(node.props.accessibilityState.disabled, true);
+    node.props.onPress();
+  }
+  assert.equal(resets, 0); assert.equal(calls, 1);
+  pending.reject(Error('Sin conexión')); await running;
+  const ready = ui.render(); assert.equal(back(ready).props.disabled, false);
+  back(ready).props.onPress(); assert.equal(resets, 1); assert.equal(calls, 1);
+});
+
 for (const kind of ['login', 'registro']) {
   test(`${kind}: acción visible, validación sin envío y navegación de teclado`, async () => {
     let calls = 0; const ui = formHarness(kind, async () => { calls++; });
