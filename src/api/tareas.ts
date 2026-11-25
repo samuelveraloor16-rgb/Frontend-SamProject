@@ -12,7 +12,7 @@ export function listarTareasProyecto(
 
 /** GET /tareas/:id — detalle con `subtareasDetalle` embebido (contrato §4). */
 export function obtenerTarea(tareaId: string): Promise<TareaDetalle> {
-  return request<TareaDetalle>(`/tareas/${tareaId}`);
+  return request<TareaDetalle>(`/tareas/${encodeURIComponent(tareaId)}`);
 }
 
 export type ActualizarTareaInput = {

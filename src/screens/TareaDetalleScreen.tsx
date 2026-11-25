@@ -33,6 +33,8 @@ import { FormField } from '../components/FormField';
 import { PickerModal } from '../components/PickerModal';
 import { PrioridadBadge, PRIORIDAD_ORDEN } from '../components/PrioridadBadge';
 import { formatFechaCorta } from '../lib/format';
+import { ComentariosSection } from '../components/ComentariosSection';
+import { accesoComentariosDenegado, comentariosKey } from '../lib/comentariosLectura';
 
 type Ruta = RouteProp<RootStackParamList, 'TareaDetalle'>;
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -93,10 +95,12 @@ function entradaAIso(input: string): string | null {
 export function TareaDetalleScreen() {
   const route = useRoute<Ruta>();
   const { tareaId } = route.params;
+  const queryClient = useQueryClient();
 
   const tareaQuery = useQuery({
     queryKey: ['tarea', tareaId],
     queryFn: () => obtenerTarea(tareaId),
+    retry: (count, error) => !accesoComentariosDenegado(error) && count < 2,
   });
   const tarea = tareaQuery.data ?? null;
 
@@ -104,8 +108,14 @@ export function TareaDetalleScreen() {
     queryKey: ['proyecto', tarea?.proyectoId],
     enabled: !!tarea?.proyectoId,
     queryFn: () => obtenerProyecto(tarea!.proyectoId),
+    retry: (count, error) => !accesoComentariosDenegado(error) && count < 2,
   });
   const proyecto = proyectoQuery.data ?? null;
+  const accesoPerdido = accesoComentariosDenegado(tareaQuery.error) ||
+    accesoComentariosDenegado(proyectoQuery.error);
+  useEffect(() => {
+    if (accesoPerdido) queryClient.removeQueries({ queryKey: comentariosKey(tareaId), exact: true });
+  }, [accesoPerdido, queryClient, tareaId]);
 
   const espacioId = proyecto?.espacioId;
   const etiquetasQuery = useQuery({
@@ -125,22 +135,23 @@ export function TareaDetalleScreen() {
     );
   }
 
-  if (tareaQuery.isError || !tarea) {
+  if (accesoPerdido || tareaQuery.isError || !tarea) {
     return (
       <View className="flex-1 bg-background">
         <ScreenHeader titulo="Detalle de tarea" />
         <View className="flex-1 justify-center px-5">
           <View className="rounded-2xl border border-[#E5B8B3] bg-[#FAE8E6] px-5 py-5">
             <Text className="text-[14px] leading-5 text-[#8C2F28]">
-              No pudimos cargar la tarea. {mensajeDeError(tareaQuery.error)}
+              {accesoPerdido ? 'Esta tarea ya no está disponible o no tienes acceso' :
+                `No pudimos cargar la tarea. ${mensajeDeError(tareaQuery.error)}`}
             </Text>
-            <Pressable
+            {!accesoPerdido ? <Pressable
               accessibilityRole="button"
               onPress={() => void tareaQuery.refetch()}
               className="mt-3 self-start rounded-full border border-[#8C2F28] px-4 py-2"
             >
               <Text className="text-[13px] font-semibold text-[#8C2F28]">Reintentar</Text>
-            </Pressable>
+            </Pressable> : null}
           </View>
         </View>
       </View>
@@ -674,6 +685,8 @@ function DetalleContenido({
             ) : null}
           </View>
         ) : null}
+
+        <ComentariosSection key={tareaId} tareaId={tareaId} soloLectura={soloLectura} />
 
         {/* Eliminar tarea */}
         {!soloLectura ? (

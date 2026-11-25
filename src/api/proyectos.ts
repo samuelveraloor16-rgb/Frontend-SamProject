@@ -29,7 +29,7 @@ export function crearProyecto(
 }
 
 export function obtenerProyecto(proyectoId: string): Promise<Proyecto> {
-  return request<Proyecto>(`/proyectos/${proyectoId}`);
+  return request<Proyecto>(`/proyectos/${encodeURIComponent(proyectoId)}`);
 }
 
 /** RF-11: total, hechas, pendientes, enCurso, vencidas y progreso (1 decimal). */

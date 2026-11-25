@@ -49,6 +49,10 @@ type RequestOptions = {
   /** false para endpoints públicos (registro, login, recuperar, restablecer). */
   auth?: boolean;
   signal?: AbortSignal;
+  /** Cabeceras adicionales; la autenticación sigue gestionada por este cliente. */
+  headers?: Record<string, string>;
+  /** Metadatos de una respuesta exitosa, sin cambiar el valor retornado. */
+  onResponseHeaders?: (headers: Headers) => void;
 };
 
 function normalizarMensajes(body: ApiErrorBody | undefined, fallback: string): string[] {
@@ -72,7 +76,7 @@ async function parseErrorBody(res: Response): Promise<ApiErrorBody | undefined> 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, auth = true, signal } = options;
 
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  const headers: Record<string, string> = { ...options.headers, Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const token = auth ? getToken() : null;
   const tokenVersion = getTokenVersion();
@@ -121,6 +125,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   let text: string;
+  options.onResponseHeaders?.(res.headers);
   try { text = await res.text(); } catch {
     throw new ApiRequestError(0, 'NetworkError', ['No se pudo completar la respuesta. Revisa tu conexión.']);
   }

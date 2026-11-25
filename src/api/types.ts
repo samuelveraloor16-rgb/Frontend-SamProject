@@ -1,5 +1,5 @@
 /**
- * Tipos del contrato de API (docs/orquestacion/CONTRATO_API.md v1.2).
+ * Tipos del contrato de API (docs/orquestacion/CONTRATO_API.md v1.3).
  * La app NO calcula métricas: progreso, vencidas y ritmo vienen del backend.
  */
 
@@ -20,6 +20,32 @@ export type AuthResponse = {
 };
 
 export type RolEspacio = 'ADMINISTRADOR' | 'MIEMBRO';
+
+/** Identidad mínima RF-19: directorio, autor y menciones, sin datos de contacto. */
+export type MiembroMencionable = { id: string; nombre: string };
+
+export type Comentario = {
+  id: string;
+  tareaId: string;
+  texto: string;
+  autor: MiembroMencionable;
+  menciones: MiembroMencionable[];
+  creadoEn: string;
+  actualizadoEn: string;
+};
+
+/** Aviso propio mínimo RF-19, no el módulo completo RF-21. */
+export type Notificacion = {
+  id: string;
+  tipo: 'MENCION';
+  titulo: string;
+  cuerpo: null;
+  leida: boolean;
+  datos: { espacioId: string; proyectoId: string; tareaId: string; comentarioId: string };
+  creadoEn: string;
+};
+
+export type PaginacionParams = { page?: number; pageSize?: number };
 
 /** Objeto Espacio (vista pública, CONTRATO_API.md §2). */
 export type Espacio = {

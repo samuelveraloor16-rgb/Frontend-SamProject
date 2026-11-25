@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RegistroScreen } from '../screens/RegistroScreen';
 import { HomeScreen } from '../screens/HomeScreen';
+import { NotificacionesScreen } from '../screens/NotificacionesScreen';
 import { BandejaTabScreen } from '../screens/BandejaTabScreen';
 import { EspacioScreen } from '../screens/EspacioScreen';
 import { ProyectoScreen } from '../screens/ProyectoScreen';
@@ -138,6 +139,7 @@ export function AppNavigator() {
           <>
             <Stack.Screen name="Principal" component={PrincipalTabs} />
             <Stack.Screen name="Perfil" component={PerfilScreen} />
+            <Stack.Screen name="Notificaciones" component={NotificacionesScreen} />
             <Stack.Screen name="CambiarContrasena" component={CambiarContrasenaScreen} />
             <Stack.Screen name="Espacio" component={EspacioScreen} />
             <Stack.Screen name="Proyecto" component={ProyectoScreen} />

@@ -112,6 +112,9 @@ export function HomeScreen() {
         <Pressable accessibilityRole="button" onPress={() => navigation.navigate('Perfil')} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
           <Text className="text-primary font-semibold underline">Perfil</Text>
         </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Notificaciones" onPress={() => navigation.navigate('Notificaciones')} style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}>
+          <Text className="text-primary font-semibold underline">Notificaciones</Text>
+        </Pressable>
         <View className="mt-4 h-[3px] w-14 rounded-full bg-tertiary" />
 
         {/* Espacios del usuario */}

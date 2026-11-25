@@ -11,6 +11,7 @@ export type RootStackParamList = {
   Registro: undefined;
   Recuperar: undefined;
   Perfil: undefined;
+  Notificaciones: undefined;
   CambiarContrasena: undefined;
   /** Autenticado: pestañas principales (Inicio, Bandeja). */
   Principal: NavigatorScreenParams<PrincipalTabParamList> | undefined;
