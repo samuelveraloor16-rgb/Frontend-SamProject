@@ -765,6 +765,7 @@ function perfilHarness(api, client, controller) {
     '../api/auth':api,'../api/client':client,'../components/FormField':{FormField:components.FormField},'../components/PrimaryButton':{PrimaryButton:components.PrimaryButton},'../components/ErrorBanner':{ErrorBanner:components.ErrorBanner},'../lib/validation':val};
   const src=fs.readFileSync('src/screens/PerfilScreen.tsx','utf8'); const js=ts.transpileModule(src,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.ReactJSX}}).outputText;
     deps['../components/PushControls'] = { PushControls: 'PushControls' };
+    deps['../components/PreferenciasNotificaciones'] = { PreferenciasNotificaciones: 'PreferenciasNotificaciones' };
     const exports={}; vm.runInNewContext(js,{exports,require:name=>{if(!(name in deps))throw Error(name);return deps[name];},Promise,URL,Error});
   return {components,perfilEscrituras,unmount:()=>{slots=[];index=0;effect=undefined;effectRan=false;},render:(name='PerfilScreen')=>{index=0; const result=exports[name]({navigation:{goBack(){},navigate(){}}}); if(effect&&!effectRan){effectRan=true;effect();} return result;}};
 }
