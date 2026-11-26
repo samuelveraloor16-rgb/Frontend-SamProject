@@ -9,6 +9,7 @@ import type { Usuario } from '../api/types';
 import { FormField } from '../components/FormField';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { PushControls } from '../components/PushControls';
 import { validarNombre, validarContrasena, validarConfirmacion } from '../lib/validation';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -64,6 +65,7 @@ export function PerfilScreen({ navigation }: NativeStackScreenProps<RootStackPar
         <Pressable accessibilityRole="button" onPress={() => navigation.navigate('CambiarContrasena')} style={{ minHeight: 56, justifyContent: 'center' }}><Text className="text-primary font-semibold">Cambiar contraseña ›</Text></Pressable>
       </>}
     </>}
+    <PushControls />
   </Marco>;
 }
 

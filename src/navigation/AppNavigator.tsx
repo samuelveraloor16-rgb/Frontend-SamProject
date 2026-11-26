@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Image, View, ActivityIndicator, Text, Linking } from 'react-native';
-import { NavigationContainer, type LinkingOptions } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef, type LinkingOptions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -90,7 +90,9 @@ function PantallaDeCarga() {
 }
 
 export function AppNavigator() {
-  const { estado, usuario, aviso, errorValidacion, revalidar, reintentarBorrado } = useAuth();
+  const { estado, usuario, aviso, errorValidacion, revalidar, reintentarBorrado, push, capturarSesion, esSesionActual } = useAuth();
+  const [navigationRef] = useState(() => createNavigationContainerRef<RootStackParamList>());
+  useEffect(() => () => push.setNavigator(null), [push]);
   const coordinator = useRef(new ResetLinkCoordinator());
   const [reset, setReset] = useState<ResetLinkState | null>(null);
   const [recuperar, setRecuperar] = useState(false);
@@ -128,7 +130,12 @@ export function AppNavigator() {
   const autenticado = estado === 'autenticado' && usuario != null;
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer key={capturarSesion()?.generation ?? 'publico'} ref={navigationRef} linking={linking} onReady={() => {
+      const sello = capturarSesion();
+      push.setNavigator(id => {
+        if (esSesionActual(sello) && navigationRef.isReady()) navigationRef.navigate('TareaDetalle', { tareaId: id });
+      });
+    }}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,

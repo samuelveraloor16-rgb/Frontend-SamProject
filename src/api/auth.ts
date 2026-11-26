@@ -13,14 +13,14 @@ export function iniciarSesion(input: LoginInput): Promise<AuthResponse> {
   return request<AuthResponse>('/auth/login', { method: 'POST', body: input, auth: false });
 }
 
-export async function cerrarSesionRemota(): Promise<{ mensaje: string }> {
+export async function cerrarSesionRemota(bearer?: string): Promise<{ mensaje: string }> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => { controller.abort(); reject(new Error('Tiempo de espera agotado')); }, 15000);
   });
   try {
-    return await Promise.race([request<{ mensaje: string }>('/auth/logout', { method: 'POST', signal: controller.signal }), timeout]);
+    return await Promise.race([request<{ mensaje: string }>('/auth/logout', { method: 'POST', signal: controller.signal, bearer }), timeout]);
   } finally {
     if (timer) clearTimeout(timer);
   }

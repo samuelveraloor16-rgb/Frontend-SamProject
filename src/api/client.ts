@@ -44,6 +44,8 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 }
 
 type RequestOptions = {
+  /** Credencial capturada: no consulta ni invalida la sesión global. */
+  bearer?: string;
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   /** false para endpoints públicos (registro, login, recuperar, restablecer). */
@@ -78,7 +80,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   const headers: Record<string, string> = { ...options.headers, Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const token = auth ? getToken() : null;
+  const token = auth ? (options.bearer ?? getToken()) : null;
   const tokenVersion = getTokenVersion();
   if (auth) {
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -109,7 +111,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       error.name = 'AbortError';
       throw error;
     }
-    if (auth && token && tokenVersion === getTokenVersion()) onUnauthorized?.();
+    if (auth && options.bearer === undefined && token && tokenVersion === getTokenVersion()) onUnauthorized?.();
     throw new ApiRequestError(401, 'Unauthorized', ['No autorizado.']);
   }
 

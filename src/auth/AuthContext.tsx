@@ -3,6 +3,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { actualizarPerfil, cambiarContrasena, cerrarSesionRemota, iniciarSesion, obtenerPerfil, registrar } from '../api/auth';
 import { saveToken, clearToken, loadToken, getToken, getTokenVersion, SecureStorageError } from '../api/tokenStorage';
 import { ApiRequestError, setUnauthorizedHandler } from '../api/client';
+import { AppState } from 'react-native';
+import { createPushController, listenPush } from '../push/expoPush';
+import type { PushController } from '../push/PushController';
 import { SessionController, type SelloSesion } from './SessionController';
 import { ProfileWriteCoordinator } from './ProfileWriteCoordinator';
 import type { Usuario } from '../api/types';
@@ -20,13 +23,20 @@ type AuthContextValue = ReturnType<SessionController['getSnapshot']> & {
   actualizarUsuario: (usuario: Usuario, sello: SelloSesion | null) => void;
   salirLocalSiSesionActual: (sello: SelloSesion | null, aviso: string) => Promise<void>; limpiarAviso: () => void;
   perfilEscrituras: ProfileWriteCoordinator;
+  push: PushController;
 };
 const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const [push] = useState(createPushController);
   const [controller] = useState(() => new SessionController({
     clearToken, saveToken, loadToken, getToken, getTokenVersion,
-    perfil: obtenerPerfil, logout: cerrarSesionRemota,
+    perfil: obtenerPerfil, logout: async () => {
+      const jwt = getToken();
+      await push.beforeLogout();
+      // Bearer inmutable: la limpieza local puede haber terminado durante DELETE.
+      if (jwt) await cerrarSesionRemota(jwt);
+    },
     login: (email, contrasena) => iniciarSesion({ email, contrasena }),
     registro: (nombre, email, contrasena) => registrar({ nombre, email, contrasena }),
     clearCache: () => queryClient.clear(),
@@ -44,16 +54,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   useEffect(() => {
     setUnauthorizedHandler(controller.unauthorized);
-    const unsubscribe = controller.subscribe(perfilEscrituras.sincronizar);
+    const sync = () => {
+      perfilEscrituras.sincronizar();
+      const sello = controller.capturarSesion(), jwt = getToken();
+      push.setSession(sello && jwt ? { ...sello, jwt } : null);
+      if (controller.getSnapshot().estado === 'no-autenticado') push.discardTap();
+    };
+    const unsubscribe = controller.subscribe(sync);
+    const unlisten = listenPush(push);
+    const appState = AppState.addEventListener('change', state => { if (state === 'active') void push.refresh(false); });
     void controller.bootstrap();
-    return () => { unsubscribe(); setUnauthorizedHandler(null); };
-  }, [controller, perfilEscrituras]);
+    return () => { unsubscribe(); unlisten(); appState.remove(); push.setSession(null); setUnauthorizedHandler(null); };
+  }, [controller, perfilEscrituras, push]);
   return <AuthContext.Provider value={{ ...snapshot, iniciarSesion: controller.iniciarSesion, registrarse: controller.registrarse,
     cerrarSesion: controller.cerrarSesion, salirLocal: controller.salirLocal, revalidar: controller.revalidar, revalidarTrasReset: controller.revalidarTrasReset,
     iniciarReset: controller.iniciarReset, finalizarReset: controller.finalizarReset,
     reintentarBorrado: controller.retryCleanup, actualizarUsuario: controller.actualizarUsuario,
     capturarSesion: controller.capturarSesion, esSesionActual: controller.esSesionActual, esCredencialActual: controller.esCredencialActual,
-    salirLocalSiSesionActual: controller.salirLocalSiSesionActual, limpiarAviso: controller.limpiarAviso, perfilEscrituras }}>
+    salirLocalSiSesionActual: controller.salirLocalSiSesionActual, limpiarAviso: controller.limpiarAviso, perfilEscrituras, push }}>
     {children}
   </AuthContext.Provider>;
 }
