@@ -11,6 +11,7 @@ import { NotificacionesScreen } from '../screens/NotificacionesScreen';
 import { BandejaTabScreen } from '../screens/BandejaTabScreen';
 import { EspacioScreen } from '../screens/EspacioScreen';
 import { ProyectoScreen } from '../screens/ProyectoScreen';
+import { PanelProyectoScreen } from '../screens/PanelProyectoScreen';
 import { TareasScreen } from '../screens/TareasScreen';
 import { TareaDetalleScreen } from '../screens/TareaDetalleScreen';
 import { KanbanScreen } from '../screens/KanbanScreen';
@@ -150,6 +151,7 @@ export function AppNavigator() {
             <Stack.Screen name="CambiarContrasena" component={CambiarContrasenaScreen} />
             <Stack.Screen name="Espacio" component={EspacioScreen} />
             <Stack.Screen name="Proyecto" component={ProyectoScreen} />
+            <Stack.Screen name="PanelProyecto" component={PanelProyectoScreen} />
             <Stack.Screen name="Tareas" component={TareasScreen} />
             <Stack.Screen name="TareaDetalle" component={TareaDetalleScreen} />
             <Stack.Screen name="Kanban" component={KanbanScreen} />

@@ -19,6 +19,8 @@ export type RootStackParamList = {
   Espacio: { espacioId: string };
   /** Detalle de proyecto: progreso RF-11 + tareas en lista. */
   Proyecto: { proyectoId: string };
+  /** Panel RF22: consulta dedicada, solo lectura. */
+  PanelProyecto: { proyectoId: string };
   /**
    * Lista de tareas con filtros (RF-16).
    * - `proyectoId`: tareas de un proyecto.

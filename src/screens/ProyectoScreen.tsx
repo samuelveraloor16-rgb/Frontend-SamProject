@@ -103,6 +103,14 @@ export function ProyectoScreen() {
         }
         ListHeaderComponent={
           <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Ver panel del proyecto"
+              onPress={() => navigation.navigate('PanelProyecto', { proyectoId })}
+              style={{ minHeight: 48, justifyContent: 'center', padding: 12, marginBottom: 16, borderWidth: 1, borderColor: colors.primary, borderRadius: 12 }}
+            >
+              <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>Ver panel del proyecto</Text>
+            </Pressable>
             {proyecto?.archivado ? (
               <View className="mb-4 flex-row items-center gap-2 rounded-xl border border-tertiary bg-[#FBF9EE] px-4 py-3">
                 <Ionicons name="archive-outline" size={18} color={colors.text} />
