@@ -143,6 +143,7 @@ function uiModule(extra={}) {
     'react-native':{View:'View',Text:'Text',ScrollView:'ScrollView',ActivityIndicator:'ActivityIndicator',StyleSheet:{create:x=>x}},
     '@react-navigation/native':{},'../auth/AuthContext':{},'../api/tokenStorage':{},'../api/metricas':api,
     '../lib/PanelProyectoController':{PanelProyectoController:Controller},'../components/ScreenHeader':{},'../components/PrimaryButton':{},
+    '../components/ReportesProyecto':{ReportesProyecto:()=>null},
     '../theme/colors':{colors:{primary:'#245B4A',secondary:'#DCE9DF',tertiary:'#D5C78E',background:'#F7F8F5',text:'#34413A'}},...extra,
   });
 }

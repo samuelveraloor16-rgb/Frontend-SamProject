@@ -9,6 +9,8 @@ import type { PushController } from '../push/PushController';
 import { SessionController, type SelloSesion } from './SessionController';
 import { ProfileWriteCoordinator } from './ProfileWriteCoordinator';
 import type { Usuario } from '../api/types';
+import { sincronizarReportes } from '../lib/reportesSesion';
+import { limpiarResiduosReportes, temporalesReportes } from '../lib/expoReportes';
 
 type AuthContextValue = ReturnType<SessionController['getSnapshot']> & {
   iniciarSesion: (email: string, contrasena: string) => Promise<void>;
@@ -54,15 +56,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   useEffect(() => {
     setUnauthorizedHandler(controller.unauthorized);
+    let reporteSello = controller.capturarSesion();
     const sync = () => {
+      sincronizarReportes();
+      if (!controller.esSesionActual(reporteSello)) { temporalesReportes.rotar(); reporteSello = controller.capturarSesion(); }
       perfilEscrituras.sincronizar();
       const sello = controller.capturarSesion(), jwt = getToken();
       push.setSession(sello && jwt ? { ...sello, jwt } : null);
       if (controller.getSnapshot().estado === 'no-autenticado') push.discardTap();
     };
     const unsubscribe = controller.subscribe(sync);
+    limpiarResiduosReportes();
     const unlisten = listenPush(push);
-    const appState = AppState.addEventListener('change', state => { if (state === 'active') void push.refresh(false); });
+    const appState = AppState.addEventListener('change', state => { if (state === 'active') { limpiarResiduosReportes(); void push.refresh(false); } });
     void controller.bootstrap();
     return () => { unsubscribe(); unlisten(); appState.remove(); push.setSession(null); setUnauthorizedHandler(null); };
   }, [controller, perfilEscrituras, push]);

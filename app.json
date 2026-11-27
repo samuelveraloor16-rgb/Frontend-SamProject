@@ -11,7 +11,9 @@
       "supportsTablet": true
     },
     "android": {
-      "permissions": ["android.permission.POST_NOTIFICATIONS"],
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#DCE9DF",
         "foregroundImage": "./assets/icon.png"
@@ -24,7 +26,16 @@
     },
     "plugins": [
       "expo-secure-store",
-      ["expo-notifications", { "defaultChannel": "default", "color": "#245B4A", "enableRemoteNotifications": true, "enableBackgroundRemoteNotifications": false }]
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "default",
+          "color": "#245B4A",
+          "enableRemoteNotifications": true,
+          "enableBackgroundRemoteNotifications": false
+        }
+      ],
+      "expo-sharing"
     ]
   }
 }

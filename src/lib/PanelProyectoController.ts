@@ -29,6 +29,7 @@ export class PanelProyectoController {
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   private update(snapshot: Snapshot) { this.snapshot = snapshot; this.listeners.forEach(fn => fn()); }
   activar = () => { this.activo = true; };
+  denegarAcceso = () => { this.revision++; this.update({ ...vacio(), fase: 'sin-acceso', error: 'Proyecto no disponible. Puede que ya no tengas acceso.' }); };
   suspender = () => { this.activo = false; this.revision++; this.update(vacio()); };
   dispose = () => { this.suspender(); this.listeners.clear(); };
   cargar = async () => {

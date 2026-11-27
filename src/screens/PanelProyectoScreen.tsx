@@ -11,6 +11,7 @@ import type { RootStackParamList } from '../navigation/types';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { colors } from '../theme/colors';
+import { ReportesProyecto } from '../components/ReportesProyecto';
 
 export function PanelProyectoScreen() {
   const { params: { proyectoId } } = useRoute<RouteProp<RootStackParamList, 'PanelProyecto'>>();
@@ -41,6 +42,7 @@ function PanelSesion({ proyectoId, sello, jwt }: { proyectoId: string; sello: Se
       {(ocupado || datos.fase === 'inicial') && <View accessibilityLiveRegion="polite" style={styles.section}><ActivityIndicator color={colors.primary} /><Text style={styles.body}>Consultando un nuevo corte…</Text></View>}
       {datos.error && <View accessibilityLiveRegion="polite" style={styles.warning}><Text style={styles.body}>{datos.error}</Text><Text style={styles.body}>No se muestran cifras anteriores. Reintenta cuando tengas conexión para comprobar el acceso y obtener otro corte.</Text></View>}
       {datos.metricas && <MetricasPanel metricas={datos.metricas} />}
+      {datos.metricas && <ReportesProyecto id={proyectoId} sello={sello} jwt={jwt} sinAcceso={controller.denegarAcceso} />}
       <PrimaryButton titulo={datos.error ? 'Reintentar panel' : 'Actualizar panel'} cargando={ocupado} onPress={() => void controller.cargar()} />
       {datos.fase === 'sin-acceso' && <View style={styles.section}><PrimaryButton titulo="Volver al inicio" onPress={() => navigation.navigate('Principal')} /></View>}
       <Text style={styles.note}>El panel no es en tiempo real. Se consulta al volver a esta pantalla o al actualizar. Sin conexión no se puede comprobar si el acceso sigue vigente.</Text>
